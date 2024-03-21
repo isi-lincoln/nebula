@@ -144,6 +144,30 @@ func (n *connectionManager) AddTrafficWatch(localIndex uint32) {
 	n.outLock.Unlock()
 }
 
+func (n *connectionManager) Close(ctx context.Context) {
+
+	n.l.Infof("In Close\n")
+
+	n.hostMap.RLock()
+	defer n.hostMap.RUnlock()
+
+	localIndex, has := n.trafficTimer.Purge()
+	if !has {
+		n.l.Infof("has is false\n")
+		return
+	}
+
+	hostinfo := n.hostMap.Indexes[localIndex]
+
+	n.l.WithFields(logrus.Fields{
+		"index":    localIndex,
+		"hostInfo": hostinfo,
+	}).Info("Closing Tunnel")
+
+	n.intf.sendCloseTunnel(hostinfo)
+	n.intf.closeTunnel(hostinfo)
+}
+
 func (n *connectionManager) Start(ctx context.Context) {
 	go n.Run(ctx)
 }
