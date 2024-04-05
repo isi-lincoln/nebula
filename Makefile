@@ -186,22 +186,33 @@ bench-cpu-long:
 	go test -bench=. -benchtime=60s -cpuprofile=cpu.pprof
 	go tool pprof go-audit.test cpu.pprof
 
-proto: nebula.pb.go cert/cert.pb.go
+proto: nebula.pb.go cert/cert.pb.go lincoln_grpc.pb.go
 
 nebula.pb.go: nebula.proto .FORCE
 	go build github.com/gogo/protobuf/protoc-gen-gogofaster
 	PATH="$(CURDIR):$(PATH)" protoc --gogofaster_out=paths=source_relative:. $<
 	rm protoc-gen-gogofaster
 
+#go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
+#go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
+avoid_grpc.pb.go: avoid.proto .FORCE
+	protoc -I=. --go_out=. --go_opt=paths=source_relative \
+		--go-grpc_out=. --go-grpc_opt=paths=source_relative  \
+		$< 
+
+
 cert/cert.pb.go: cert/cert.proto .FORCE
 	$(MAKE) -C cert cert.pb.go
 
-service:
-	@echo > $(NULL_FILE)
-	$(eval NEBULA_CMD_PATH := "./cmd/nebula-service")
-ifeq ($(words $(MAKECMDGOALS)),1)
-	@$(MAKE) service ${.DEFAULT_GOAL} --no-print-directory
-endif
+bin/nebula-service: | avoid_grpc.pb.go
+	GOOS=$(firstword $(subst -, , $*)) \
+		GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
+		go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./cmd/nebula-service
+
+bin/nebula-cli: | avoid_grpc.pb.go
+	GOOS=$(firstword $(subst -, , $*)) \
+		GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
+		go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./cmd/avoid
 
 bin-docker: bin build/linux-amd64/nebula build/linux-amd64/nebula-cert
 
@@ -220,5 +231,5 @@ smoke-docker-race: CGO_ENABLED = 1
 smoke-docker-race: smoke-docker
 
 .FORCE:
-.PHONY: bench bench-cpu bench-cpu-long bin build-test-mobile e2e e2ev e2evv e2evvv e2evvvv proto release service smoke-docker smoke-docker-race test test-cov-html
+.PHONY: bench bench-cpu bench-cpu-long bin build-test-mobile e2e e2ev e2evv e2evvv e2evvvv proto release bin/nebula-service bin/nebula-cli smoke-docker smoke-docker-race test test-cov-html
 .DEFAULT_GOAL := bin

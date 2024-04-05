@@ -1,0 +1,16 @@
+syntax = "proto3";
+package nebula;
+
+option go_package = "github.com/slackhq/nebula";
+
+
+service Avoid {
+  rpc GetHostInfo (GetHostInfoRequest) returns (GetHostInfoResponse) {}
+}
+
+
+message GetHostInfoRequest{}
+
+message GetHostInfoResponse{
+    string response = 1;
+}
