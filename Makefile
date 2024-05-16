@@ -80,7 +80,7 @@ e2e-bench: e2e
 
 DOCKER_BIN = build/linux-amd64/nebula build/linux-amd64/nebula-cert
 
-all: $(ALL:%=build/%/nebula) $(ALL:%=build/%/nebula-cert)
+all: $(ALL:%=build/%/nebula) $(ALL:%=build/%/nebula-cert) $(ALL:%=build/%/avoid-cli) $(ALL:%=build/%/avoid)
 
 docker: docker/linux-$(shell go env GOARCH)
 
@@ -116,9 +116,11 @@ bin-freebsd-arm64: build/freebsd-arm64/nebula build/freebsd-arm64/nebula-cert
 bin-boringcrypto: build/linux-$(shell go env GOARCH)-boringcrypto/nebula build/linux-$(shell go env GOARCH)-boringcrypto/nebula-cert
 	mv $? .
 
-bin:
+bin: | proto
 	go build $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./nebula${NEBULA_CMD_SUFFIX} ${NEBULA_CMD_PATH}
 	go build $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./nebula-cert${NEBULA_CMD_SUFFIX} ./cmd/nebula-cert
+	go build -C ./avoid/cli $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-cli
+	go build -C ./avoid/service $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-service 
 
 install:
 	go install $(BUILD_ARGS) -ldflags "$(LDFLAGS)" ${NEBULA_CMD_PATH}
@@ -189,12 +191,17 @@ bench-cpu-long:
 	go test -bench=. -benchtime=60s -cpuprofile=cpu.pprof
 	go tool pprof go-audit.test cpu.pprof
 
-proto: nebula.pb.go cert/cert.pb.go
+proto: nebula.pb.go cert/cert.pb.go avoid/avoid_grpc.pb.go
 
 nebula.pb.go: nebula.proto .FORCE
 	go build github.com/gogo/protobuf/protoc-gen-gogofaster
 	PATH="$(CURDIR):$(PATH)" protoc --gogofaster_out=paths=source_relative:. $<
 	rm protoc-gen-gogofaster
+
+avoid/avoid_grpc.pb.go: avoid/avoid.proto .FORCE
+	protoc -I=. --go_out=. --go_opt=paths=source_relative \
+	--go-grpc_out=. --go-grpc_opt=paths=source_relative  \
+	$< 
 
 cert/cert.pb.go: cert/cert.proto .FORCE
 	$(MAKE) -C cert cert.pb.go
@@ -205,6 +212,16 @@ service:
 ifeq ($(words $(MAKECMDGOALS)),1)
 	@$(MAKE) service ${.DEFAULT_GOAL} --no-print-directory
 endif
+
+avoid-service: | avoid/avoid_grpc.pb.go
+	GOOS=$(firstword $(subst -, , $*)) \
+	GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
+	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/service
+
+avoid-cli: | avoid/avoid_grpc.pb.go
+	GOOS=$(firstword $(subst -, , $*)) \
+	GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
+	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/cli
 
 bin-docker: bin build/linux-amd64/nebula build/linux-amd64/nebula-cert
 
@@ -227,5 +244,5 @@ smoke-vagrant/%: bin-docker build/%/nebula
 	cd .github/workflows/smoke/ && ./smoke-vagrant.sh $*
 
 .FORCE:
-.PHONY: bench bench-cpu bench-cpu-long bin build-test-mobile e2e e2ev e2evv e2evvv e2evvvv proto release service smoke-docker smoke-docker-race test test-cov-html smoke-vagrant/%
+.PHONY: bench bench-cpu bench-cpu-long bin build-test-mobile e2e e2ev e2evv e2evvv e2evvvv proto release avoid-service avoid-cli service smoke-docker smoke-docker-race test test-cov-html smoke-vagrant/%
 .DEFAULT_GOAL := bin

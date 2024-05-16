@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package avoid;
+
+
+option go_package = "github.com/slackhq/nebula/avoid";
+
+service Management {
+  rpc ListConnections (ListRequest) returns (ListReply) {}
+  rpc GetStats (StatsRequest) returns (StatsReply) {}
+  rpc Migrate (MigrateRequest) returns (MigrateReply) {}
+  rpc Shutdown (ShutdownRequest) returns (ShutdownReply) {}
+}
+
+message ShutdownRequest{
+  string name = 1;
+}
+message ShutdownReply{}
+
+message ConnInfo {
+  string name = 1;
+  string ran = 2;
+  string path = 3;
+  string endpoint = 4;
+  string network = 5;
+  string user = 6;
+  int64 duration = 7;
+  int64 lastseen = 8;
+  int64 download = 9;
+  int64 upload = 10;
+}
+
+message ListRequest {}
+message ListReply {
+  repeated ConnInfo info = 1;
+}
+
+message Statistics {
+  string name = 1;
+  string connectedran = 2;
+  string nearbyran = 3;
+  string path = 4;
+  string endpoint = 5;
+  string network = 6;
+  string user = 7;
+  int64 duration = 8;
+  int64 lastseen = 9;
+  int64 download = 10;
+  int64 upload = 11;
+}
+
+message StatsRequest {
+  string name = 1;
+}
+message StatsReply {
+  repeated Statistics stats = 1;
+}
+
+message ConnectionRequest{
+  string name = 1;
+}
+
+message MigrateRequest {
+  string name = 1;
+  ConnectionReply migrate = 2;
+}
+message MigrateReply {}
+
+service Tunnel {
+  rpc Register (RegisterRequest) returns (RegisterReply) {}
+  rpc HealthCheck (HealthRequest) returns (HealthReply) {}
+  rpc Watch (ConnectionRequest) returns (stream ConnectionReply) {}
+}
+
+message RegisterRequest {
+  string req = 1;
+}
+
+message RegisterReply {
+  string resp = 1;
+}
+
+// TODO: protobuf the message
+message HealthRequest {
+  string json = 1;
+}
+
+message HealthReply {
+  string json = 1;
+}
+
+message ConnectionReply{
+  enum New {
+    Lighthouse = 0;
+    Endpoint = 1;
+    Radio = 2;
+    Network = 3;
+  }
+
+  New Connection = 1;
+  string value = 2;
+}
