@@ -121,6 +121,7 @@ bin: | proto
 	go build $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./nebula-cert${NEBULA_CMD_SUFFIX} ./cmd/nebula-cert
 	go build -C ./avoid/cli $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-cli
 	go build -C ./avoid/service $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-service 
+	go build -C ./avoid/tunnel $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-tunnel
 
 install:
 	go install $(BUILD_ARGS) -ldflags "$(LDFLAGS)" ${NEBULA_CMD_PATH}

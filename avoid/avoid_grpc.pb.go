@@ -217,6 +217,7 @@ var Management_ServiceDesc = grpc.ServiceDesc{
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type TunnelClient interface {
 	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterReply, error)
+	TokenReplace(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*RegisterReply, error)
 	HealthCheck(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthReply, error)
 	Watch(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (Tunnel_WatchClient, error)
 }
@@ -232,6 +233,15 @@ func NewTunnelClient(cc grpc.ClientConnInterface) TunnelClient {
 func (c *tunnelClient) Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterReply, error) {
 	out := new(RegisterReply)
 	err := c.cc.Invoke(ctx, "/avoid.Tunnel/Register", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *tunnelClient) TokenReplace(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*RegisterReply, error) {
+	out := new(RegisterReply)
+	err := c.cc.Invoke(ctx, "/avoid.Tunnel/TokenReplace", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -284,6 +294,7 @@ func (x *tunnelWatchClient) Recv() (*ConnectionReply, error) {
 // for forward compatibility
 type TunnelServer interface {
 	Register(context.Context, *RegisterRequest) (*RegisterReply, error)
+	TokenReplace(context.Context, *ConnectionRequest) (*RegisterReply, error)
 	HealthCheck(context.Context, *HealthRequest) (*HealthReply, error)
 	Watch(*ConnectionRequest, Tunnel_WatchServer) error
 	mustEmbedUnimplementedTunnelServer()
@@ -295,6 +306,9 @@ type UnimplementedTunnelServer struct {
 
 func (UnimplementedTunnelServer) Register(context.Context, *RegisterRequest) (*RegisterReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Register not implemented")
+}
+func (UnimplementedTunnelServer) TokenReplace(context.Context, *ConnectionRequest) (*RegisterReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TokenReplace not implemented")
 }
 func (UnimplementedTunnelServer) HealthCheck(context.Context, *HealthRequest) (*HealthReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HealthCheck not implemented")
@@ -329,6 +343,24 @@ func _Tunnel_Register_Handler(srv interface{}, ctx context.Context, dec func(int
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TunnelServer).Register(ctx, req.(*RegisterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Tunnel_TokenReplace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConnectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TunnelServer).TokenReplace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/avoid.Tunnel/TokenReplace",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TunnelServer).TokenReplace(ctx, req.(*ConnectionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -382,6 +414,10 @@ var Tunnel_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Register",
 			Handler:    _Tunnel_Register_Handler,
+		},
+		{
+			MethodName: "TokenReplace",
+			Handler:    _Tunnel_TokenReplace_Handler,
 		},
 		{
 			MethodName: "HealthCheck",

@@ -58,6 +58,7 @@ message StatsReply {
 
 message ConnectionRequest{
   string name = 1;
+  string token = 2;
 }
 
 message MigrateRequest {
@@ -68,6 +69,7 @@ message MigrateReply {}
 
 service Tunnel {
   rpc Register (RegisterRequest) returns (RegisterReply) {}
+  rpc TokenReplace (ConnectionRequest) returns (RegisterReply) {}
   rpc HealthCheck (HealthRequest) returns (HealthReply) {}
   rpc Watch (ConnectionRequest) returns (stream ConnectionReply) {}
 }
@@ -77,7 +79,7 @@ message RegisterRequest {
 }
 
 message RegisterReply {
-  string resp = 1;
+  string token = 1;
 }
 
 // TODO: protobuf the message
@@ -91,12 +93,21 @@ message HealthReply {
 
 message ConnectionReply{
   enum New {
-    Lighthouse = 0;
-    Endpoint = 1;
-    Radio = 2;
-    Network = 3;
+    None = 0;
+    Lighthouse = 1;
+    Endpoint = 2;
+    Radio = 3;
+    Network = 4;
+  }
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3;
   }
 
   New Connection = 1;
   string value = 2;
+  ServingStatus status = 3;
+ 
 }

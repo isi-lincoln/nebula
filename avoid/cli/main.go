@@ -83,8 +83,9 @@ func main() {
 func MigrateUEFunc(name, typeMigrate, value string) {
 	req := &avoid.MigrateRequest{
 		Name:    name,
-		Migrate: &avoid.ConnectionReply{},
+		Migrate: &avoid.ConnectionReply{Value: value},
 	}
+	log.Infof("type: %s", typeMigrate)
 	switch typeMigrate {
 	case "lighthouse":
 		req.Migrate.Connection = avoid.ConnectionReply_Lighthouse
