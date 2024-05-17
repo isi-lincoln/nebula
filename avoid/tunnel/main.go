@@ -142,16 +142,17 @@ func watchFunc(name string) {
 
 			for {
 				resp, err := stream.Recv()
+				if err == io.EOF {
+					continue
+				}
 				if err != nil {
+					log.Error(err)
 					log.Errorf("backoff: 5 seconds\n")
 					time.Sleep(5 * time.Second)
 					return err
 				}
 
 				log.Infof("%s: %s -> %s", resp.Connection, resp.Value, resp.Status)
-
-				log.Infof("next check: 5 seconds\n")
-				time.Sleep(5 * time.Second)
 			}
 		})
 	}

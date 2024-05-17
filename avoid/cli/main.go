@@ -22,7 +22,7 @@ var (
 )
 
 func init() {
-	flag.IntVar(&port, "port", 55555, "avoid server port")
+	flag.IntVar(&port, "port", 55554, "avoid server port")
 	flag.StringVar(&server, "server", "localhost", "avoid server address")
 	addr = fmt.Sprintf("%s:%d", server, port)
 }
@@ -104,7 +104,7 @@ func MigrateUEFunc(name, typeMigrate, value string) {
 		return
 	}
 
-	withAvoid(addr, func(c avoid.ManagementClient) error {
+	withAvoid(addr, func(c avoid.TunnelClient) error {
 		log.Debugf("sending migrate request: %v\n", req)
 		resp, err := c.Migrate(context.TODO(), req)
 		if err != nil {
@@ -118,7 +118,7 @@ func MigrateUEFunc(name, typeMigrate, value string) {
 }
 
 func GetStatsFunc(ue string) {
-	withAvoid(addr, func(c avoid.ManagementClient) error {
+	withAvoid(addr, func(c avoid.TunnelClient) error {
 		req := &avoid.StatsRequest{Name: ue}
 		log.Debugf("sent request: %v\n", req)
 		resp, err := c.GetStats(context.TODO(), req)
@@ -136,7 +136,7 @@ func GetStatsFunc(ue string) {
 }
 
 func ListConnectionsFunc() {
-	withAvoid(addr, func(c avoid.ManagementClient) error {
+	withAvoid(addr, func(c avoid.TunnelClient) error {
 		req := &avoid.ListRequest{}
 		log.Debugf("sent list request\n")
 		resp, err := c.ListConnections(context.TODO(), req)
@@ -154,13 +154,13 @@ func ListConnectionsFunc() {
 	})
 }
 
-func withAvoid(endpoint string, f func(avoid.ManagementClient) error) error {
+func withAvoid(endpoint string, f func(avoid.TunnelClient) error) error {
 	conn, err := grpc.Dial(endpoint, grpc.WithInsecure())
 	if err != nil {
 		return fmt.Errorf("failed to connect to avoid service: %v", err)
 	}
 
-	client := avoid.NewManagementClient(conn)
+	client := avoid.NewTunnelClient(conn)
 	defer conn.Close()
 
 	return f(client)

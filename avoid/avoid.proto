@@ -5,11 +5,18 @@ package avoid;
 
 option go_package = "github.com/slackhq/nebula/avoid";
 
-service Management {
+service Tunnel {
+  // management
   rpc ListConnections (ListRequest) returns (ListReply) {}
   rpc GetStats (StatsRequest) returns (StatsReply) {}
   rpc Migrate (MigrateRequest) returns (MigrateReply) {}
   rpc Shutdown (ShutdownRequest) returns (ShutdownReply) {}
+
+  // client
+  rpc Register (RegisterRequest) returns (RegisterReply) {}
+  rpc TokenReplace (ConnectionRequest) returns (RegisterReply) {}
+  rpc HealthCheck (HealthRequest) returns (HealthReply) {}
+  rpc Watch (ConnectionRequest) returns (stream ConnectionReply) {}
 }
 
 message ShutdownRequest{
@@ -67,12 +74,7 @@ message MigrateRequest {
 }
 message MigrateReply {}
 
-service Tunnel {
-  rpc Register (RegisterRequest) returns (RegisterReply) {}
-  rpc TokenReplace (ConnectionRequest) returns (RegisterReply) {}
-  rpc HealthCheck (HealthRequest) returns (HealthReply) {}
-  rpc Watch (ConnectionRequest) returns (stream ConnectionReply) {}
-}
+
 
 message RegisterRequest {
   string req = 1;
@@ -109,5 +111,4 @@ message ConnectionReply{
   New Connection = 1;
   string value = 2;
   ServingStatus status = 3;
- 
 }

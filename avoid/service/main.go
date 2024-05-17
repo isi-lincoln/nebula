@@ -12,20 +12,26 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
 	"google.golang.org/grpc"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 var (
 	Build string
 )
 
-type ManagementServer struct {
-	avoid.UnimplementedManagementServer
+type TunnelUpdate struct {
+	Watch   avoid.Tunnel_WatchServer
+	Ch      chan avoid.ConnectionReply_ServingStatus
+	Current avoid.ConnectionReply_ServingStatus
+	Data    *avoid.ConnectionReply
 }
 
-func (s *ManagementServer) ListConnections(ctx context.Context, req *avoid.ListRequest) (*avoid.ListReply, error) {
+type TunnelServer struct {
+	avoid.UnimplementedTunnelServer
+	mu      sync.RWMutex
+	updates map[string]*TunnelUpdate
+}
+
+func (s *TunnelServer) ListConnections(ctx context.Context, req *avoid.ListRequest) (*avoid.ListReply, error) {
 	if req == nil {
 		errMsg := fmt.Sprintf("Invalid Request: ListConnections")
 		log.Errorf("%s", errMsg)
@@ -39,7 +45,7 @@ func (s *ManagementServer) ListConnections(ctx context.Context, req *avoid.ListR
 	return &avoid.ListReply{}, nil
 }
 
-func (s *ManagementServer) GetStats(ctx context.Context, req *avoid.StatsRequest) (*avoid.StatsReply, error) {
+func (s *TunnelServer) GetStats(ctx context.Context, req *avoid.StatsRequest) (*avoid.StatsReply, error) {
 	if req == nil {
 		errMsg := fmt.Sprintf("Invalid Request: GetStats")
 		log.Errorf("%s", errMsg)
@@ -53,21 +59,44 @@ func (s *ManagementServer) GetStats(ctx context.Context, req *avoid.StatsRequest
 	return &avoid.StatsReply{}, nil
 }
 
-func (s *ManagementServer) Migrate(ctx context.Context, req *avoid.MigrateRequest) (*avoid.MigrateReply, error) {
+func (s *TunnelServer) Migrate(ctx context.Context, req *avoid.MigrateRequest) (*avoid.MigrateReply, error) {
 	if req == nil {
 		errMsg := fmt.Sprintf("Invalid Request: Migrate")
 		log.Errorf("%s", errMsg)
 		return nil, fmt.Errorf("%s", errMsg)
 	}
 
-	log.Infof("Migrate: %v", req)
+	log.Infof("Migrate: %v", req.Migrate)
+	rm := req.Migrate
 
-	// TODO: Migration
+	s.mu.Lock()
+	_, ok := s.updates[req.Name]
+	if !ok {
+		s.updates[req.Name] = &TunnelUpdate{
+			Watch:   nil,
+			Ch:      make(chan avoid.ConnectionReply_ServingStatus, 1),
+			Current: avoid.ConnectionReply_SERVICE_UNKNOWN,
+			Data: &avoid.ConnectionReply{
+				Status:     avoid.ConnectionReply_SERVICE_UNKNOWN,
+				Connection: avoid.ConnectionReply_Lighthouse,
+				Value:      "",
+			},
+		}
+	} else {
+		tmp := &avoid.ConnectionReply{
+			Status:     avoid.ConnectionReply_SERVING,
+			Value:      rm.Value,
+			Connection: rm.Connection,
+		}
+		s.updates[req.Name].Data = tmp
+	}
+	s.updates[req.Name].Ch <- avoid.ConnectionReply_SERVING
+	s.mu.Unlock()
 
 	return &avoid.MigrateReply{}, nil
 }
 
-func (s *ManagementServer) Shutdown(ctx context.Context, req *avoid.ShutdownRequest) (*avoid.ShutdownReply, error) {
+func (s *TunnelServer) Shutdown(ctx context.Context, req *avoid.ShutdownRequest) (*avoid.ShutdownReply, error) {
 	if req == nil {
 		errMsg := fmt.Sprintf("Invalid Request: Shutdown")
 		log.Errorf("%s", errMsg)
@@ -79,19 +108,6 @@ func (s *ManagementServer) Shutdown(ctx context.Context, req *avoid.ShutdownRequ
 	// TODO: Shutdown/Revocation
 
 	return &avoid.ShutdownReply{}, nil
-}
-
-type TunnelServer struct {
-	avoid.UnimplementedTunnelServer
-	mu sync.RWMutex
-	// If shutdown is true, it's expected all serving status is NOT_SERVING, and
-	// will stay in NOT_SERVING.
-	shutdown bool
-	// statusMap stores the serving status of the services this Server monitors.
-	//statusMap map[string]*avoid.ConnectionReply
-	//updates   map[string]map[avoid.Tunnel_WatchServer]chan *avoid.ConnectionReply
-	statusMap map[string]avoid.ConnectionReply_ServingStatus
-	updates   map[string]map[avoid.Tunnel_WatchServer]chan avoid.ConnectionReply_ServingStatus
 }
 
 func (s *TunnelServer) Register(ctx context.Context, req *avoid.RegisterRequest) (*avoid.RegisterReply, error) {
@@ -128,100 +144,49 @@ func (s *TunnelServer) Watch(in *avoid.ConnectionRequest, stream avoid.Tunnel_Wa
 
 	log.Infof("Watch: %s\n", in.Name)
 	service := in.Name
-	// update channel is used for getting service status updates.
-	update := make(chan avoid.ConnectionReply_ServingStatus, 1)
-	s.mu.Lock()
-	// Puts the initial status to the channel.
-	if servingStatus, ok := s.statusMap[service]; ok {
-		update <- servingStatus
-	} else {
-		update <- avoid.ConnectionReply_SERVICE_UNKNOWN
-	}
 
-	// Registers the update channel to the correct place in the updates map.
-	if _, ok := s.updates[service]; !ok {
-		s.updates[service] = make(map[avoid.Tunnel_WatchServer]chan avoid.ConnectionReply_ServingStatus)
+	s.mu.Lock()
+
+	_, ok := s.updates[service]
+	if !ok {
+		s.updates[service] = &TunnelUpdate{
+			Watch:   stream,
+			Ch:      make(chan avoid.ConnectionReply_ServingStatus, 1),
+			Current: avoid.ConnectionReply_SERVICE_UNKNOWN,
+			Data: &avoid.ConnectionReply{
+				Status:     avoid.ConnectionReply_SERVICE_UNKNOWN,
+				Connection: avoid.ConnectionReply_Lighthouse,
+				Value:      "",
+			},
+		}
+		s.updates[service].Ch <- avoid.ConnectionReply_SERVICE_UNKNOWN
 	}
-	s.updates[service][stream] = update
-	defer func() {
-		s.mu.Lock()
-		delete(s.updates[service], stream)
-		s.mu.Unlock()
-	}()
 	s.mu.Unlock()
 
-	var lastSentStatus avoid.ConnectionReply_ServingStatus = -1
-	for {
-		select {
-		// Status updated. Sends the up-to-date status to the client.
-		case servingStatus := <-update:
-			if lastSentStatus == servingStatus {
-				continue
+	go func() {
+		for {
+			select {
+			// Status updated. Sends the up-to-date status to the client.
+			case servingStatus := <-s.updates[service].Ch:
+				log.Infof("Something in channel: %s\n", servingStatus)
+				if servingStatus == avoid.ConnectionReply_SERVICE_UNKNOWN {
+					log.Infof("Nothing sent\n")
+					continue
+				}
+
+				log.Infof("Sending: %v\n", s.updates[in.Name].Data)
+				stream.Send(s.updates[in.Name].Data)
 			}
-			lastSentStatus = servingStatus
-			err := stream.Send(&avoid.ConnectionReply{Status: servingStatus})
-			if err != nil {
-				return status.Error(codes.Canceled, "Stream has ended.")
-			}
-			// Context done. Removes the update channel from the updates map.
-		case <-stream.Context().Done():
-			return status.Error(codes.Canceled, "Stream has ended.")
 		}
-	}
-}
-
-/*
-func (s *TunnelServer) Watch(in *avoid.ConnectionRequest, stream avoid.Tunnel_WatchServer) error {
-	service := in.Name
-	// update channel is used for getting service status updates.
-	update := make(chan *avoid.ConnectionReply, 1)
-	s.mu.Lock()
-	// Puts the initial status to the channel.
-	if servingStatus, ok := s.statusMap[service]; ok {
-		update <- servingStatus
-	} else {
-		//update <- healthpb.TunnelCheckResponse_SERVICE_UNKNOWN
-	}
-
-	// Registers the update channel to the correct place in the updates map.
-	if _, ok := s.updates[service]; !ok {
-		s.updates[service] = make(map[avoid.Tunnel_WatchServer]chan *avoid.ConnectionReply)
-	}
-	s.updates[service][stream] = update
-	defer func() {
-		s.mu.Lock()
-		delete(s.updates[service], stream)
-		s.mu.Unlock()
 	}()
-	s.mu.Unlock()
 
-	var lastSentStatus *avoid.ConnectionReply = &avoid.ConnectionReply{}
-	for {
-		select {
-		// Status updated. Sends the up-to-date status to the client.
-		case servingStatus := <-update:
-			if lastSentStatus == servingStatus {
-				continue
-			}
-			lastSentStatus = servingStatus
-			err := stream.Send(servingStatus)
-			if err != nil {
-				return status.Error(codes.Canceled, "Stream has ended.")
-			}
-			// Context done. Removes the update channel from the updates map.
-		case <-stream.Context().Done():
-			return status.Error(codes.Canceled, "Stream has ended.")
-		}
-	}
+	return nil
 }
-*/
 
 func main() {
 	printVersion := flag.Bool("version", false, "Print version")
 	printUsage := flag.Bool("help", false, "Print command line usage")
 
-	mgmtPort := flag.Int("mgmtport", 55555, "port to configure management server")
-	mgmtServer := flag.String("mgmtserver", "0.0.0.0", "management server address or interface")
 	tunnelPort := flag.Int("tunport", 55554, "port to configure tunnel server")
 	tunnelServer := flag.String("tunserver", "0.0.0.0", "tunnel server address or interface")
 
@@ -246,27 +211,16 @@ func main() {
 		log.SetLevel(logrus.InfoLevel)
 	}
 
-	log.Infof("starting avoid mgmt api: %s:%d", *mgmtServer, *mgmtPort)
 	log.Infof("starting avoid tunnel api: %s:%d", *tunnelServer, *tunnelPort)
-
-	mgmtAddr, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *mgmtServer, *mgmtPort))
-	if err != nil {
-		log.Fatalf("failed to listen on mgmt addr: %v", err)
-	}
 
 	tunAddr, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *tunnelServer, *tunnelPort))
 	if err != nil {
 		log.Fatalf("failed to listen on tunnel addr: %v", err)
 	}
 
-	grpcManagementServer := grpc.NewServer()
-	avoid.RegisterManagementServer(grpcManagementServer, &ManagementServer{})
 	grpcTunnelServer := grpc.NewServer()
-	avoid.RegisterTunnelServer(grpcTunnelServer, &TunnelServer{})
-	go func() {
-		grpcTunnelServer.Serve(tunAddr)
-	}()
-	grpcManagementServer.Serve(mgmtAddr)
+	avoid.RegisterTunnelServer(grpcTunnelServer, &TunnelServer{updates: make(map[string]*TunnelUpdate)})
+	grpcTunnelServer.Serve(tunAddr)
 
 	os.Exit(0)
 }
