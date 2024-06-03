@@ -194,10 +194,11 @@ bench-cpu-long:
 
 proto: nebula.pb.go cert/cert.pb.go avoid/avoid_grpc.pb.go
 
+#go build github.com/gogo/protobuf/protoc-gen-gogofaster
+#PATH="$(CURDIR):$(PATH)" protoc --gogofaster_out=paths=source_relative:. $<
+#rm protoc-gen-gogofaster
 nebula.pb.go: nebula.proto .FORCE
-	go build github.com/gogo/protobuf/protoc-gen-gogofaster
-	PATH="$(CURDIR):$(PATH)" protoc --gogofaster_out=paths=source_relative:. $<
-	rm protoc-gen-gogofaster
+	protoc --gogofaster_out=paths=source_relative:. $<
 
 avoid/avoid_grpc.pb.go: avoid/avoid.proto .FORCE
 	protoc -I=. --go_out=. --go_opt=paths=source_relative \
@@ -247,3 +248,6 @@ smoke-vagrant/%: bin-docker build/%/nebula
 .FORCE:
 .PHONY: bench bench-cpu bench-cpu-long bin build-test-mobile e2e e2ev e2evv e2evvv e2evvvv proto release avoid-service avoid-cli service smoke-docker smoke-docker-race test test-cov-html smoke-vagrant/%
 .DEFAULT_GOAL := bin
+
+clean:
+	rm -f avoid/service/avoid-service avoid/tunnel/avoid-tunnel avoid/cli/avoid-cli

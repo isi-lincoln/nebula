@@ -18,8 +18,9 @@ var (
 	Build string
 )
 
+// TODO: This approach is non-persistent
 type TunnelUpdate struct {
-	Watch   avoid.Tunnel_WatchServer
+	Watch   *avoid.Tunnel_WatchServer
 	Ch      chan avoid.ConnectionReply_ServingStatus
 	Current avoid.ConnectionReply_ServingStatus
 	Data    *avoid.ConnectionReply
@@ -40,9 +41,17 @@ func (s *TunnelServer) ListConnections(ctx context.Context, req *avoid.ListReque
 
 	log.Infof("List Request")
 
+	lr := make([]*avoid.ConnInfo, 0)
+	for k, _ := range s.updates {
+		tmp := &avoid.ConnInfo{
+			Name: k,
+		}
+		lr = append(lr, tmp)
+	}
+
 	// TODO: Connection Management
 
-	return &avoid.ListReply{}, nil
+	return &avoid.ListReply{Info: lr}, nil
 }
 
 func (s *TunnelServer) GetStats(ctx context.Context, req *avoid.StatsRequest) (*avoid.StatsReply, error) {
@@ -140,17 +149,18 @@ func (s *TunnelServer) HealthCheck(ctx context.Context, req *avoid.HealthRequest
 
 // originally from here: https://github.com/grpc/grpc-go/blob/v1.64.0/health/server.go
 // APL2 license
+// TODO: I dont think this is scalable.
 func (s *TunnelServer) Watch(in *avoid.ConnectionRequest, stream avoid.Tunnel_WatchServer) error {
 
 	log.Infof("Watch: %s\n", in.Name)
 	service := in.Name
 
 	s.mu.Lock()
-
 	_, ok := s.updates[service]
+	s.mu.Unlock()
 	if !ok {
-		s.updates[service] = &TunnelUpdate{
-			Watch:   stream,
+		tu := &TunnelUpdate{
+			Watch:   &stream,
 			Ch:      make(chan avoid.ConnectionReply_ServingStatus, 1),
 			Current: avoid.ConnectionReply_SERVICE_UNKNOWN,
 			Data: &avoid.ConnectionReply{
@@ -159,14 +169,13 @@ func (s *TunnelServer) Watch(in *avoid.ConnectionRequest, stream avoid.Tunnel_Wa
 				Value:      "",
 			},
 		}
+		s.mu.Lock()
+		s.updates[service] = tu
+		log.Infof("Added new: %#v\n", s.updates[service])
 		s.updates[service].Ch <- avoid.ConnectionReply_SERVICE_UNKNOWN
-	}
-	s.mu.Unlock()
-
-	go func() {
+		s.mu.Unlock()
 		for {
 			select {
-			// Status updated. Sends the up-to-date status to the client.
 			case servingStatus := <-s.updates[service].Ch:
 				log.Infof("Something in channel: %s\n", servingStatus)
 				if servingStatus == avoid.ConnectionReply_SERVICE_UNKNOWN {
@@ -174,12 +183,27 @@ func (s *TunnelServer) Watch(in *avoid.ConnectionRequest, stream avoid.Tunnel_Wa
 					continue
 				}
 
-				log.Infof("Sending: %v\n", s.updates[in.Name].Data)
-				stream.Send(s.updates[in.Name].Data)
+				s.mu.Lock()
+				tu := s.updates[service]
+				log.Infof("Data: %#v\n", tu)
+				if tu.Watch != nil {
+					(*tu.Watch).Send(tu.Data)
+					// kill the connection? or not?
+					// break
+				} else {
+					log.Errorf("Invalid tunnel update. Watch is nil: %v\n", s.updates[service].Data)
+				}
+				s.mu.Unlock()
 			}
 		}
-	}()
+	} else {
+		stream.Send(tu.Data)
+	}
 
+	return nil
+}
+
+func (s *TunnelServer) Watcher(service string) error {
 	return nil
 }
 
