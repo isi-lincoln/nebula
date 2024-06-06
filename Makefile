@@ -197,8 +197,12 @@ proto: nebula.pb.go cert/cert.pb.go avoid/avoid_grpc.pb.go
 #go build github.com/gogo/protobuf/protoc-gen-gogofaster
 #PATH="$(CURDIR):$(PATH)" protoc --gogofaster_out=paths=source_relative:. $<
 #rm protoc-gen-gogofaster
+
+#protoc --gogofaster_out=paths=source_relative:. $<
 nebula.pb.go: nebula.proto .FORCE
-	protoc --gogofaster_out=paths=source_relative:. $<
+	go build github.com/gogo/protobuf/protoc-gen-gogofaster
+	PATH="$(CURDIR):$(PATH)" protoc --gogofaster_out=paths=source_relative:. $<
+	rm protoc-gen-gogofaster
 
 avoid/avoid_grpc.pb.go: avoid/avoid.proto .FORCE
 	protoc -I=. --go_out=. --go_opt=paths=source_relative \

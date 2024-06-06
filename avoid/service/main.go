@@ -156,7 +156,7 @@ func (s *TunnelServer) Watch(in *avoid.ConnectionRequest, stream avoid.Tunnel_Wa
 	service := in.Name
 
 	s.mu.Lock()
-	_, ok := s.updates[service]
+	val, ok := s.updates[service]
 	s.mu.Unlock()
 	if !ok {
 		tu := &TunnelUpdate{
@@ -197,7 +197,7 @@ func (s *TunnelServer) Watch(in *avoid.ConnectionRequest, stream avoid.Tunnel_Wa
 			}
 		}
 	} else {
-		stream.Send(tu.Data)
+		stream.Send(val.Data)
 	}
 
 	return nil
