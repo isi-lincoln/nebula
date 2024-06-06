@@ -16,7 +16,7 @@ jobs:
 
       - name: Build
         run: |
-          make BUILD_NUMBER="${GITHUB_REF#refs/tags/v}" release-linux release-freebsd release-openbsd release-netbsd
+          make BUILD_NUMBER="${GITHUB_REF#refs/tags/v}" release-linux
           mkdir release
           mv build/*.tar.gz release
 
@@ -63,4 +63,4 @@ jobs:
             --verify-tag \
             --title "Release ${{ github.ref_name }}" \
             "${{ github.ref_name }}" \
-            SHASUM256.txt *-latest/*.zip *-latest/*.tar.gz
+            SHASUM256.txt *-latest/*.tar.gz
