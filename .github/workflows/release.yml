@@ -60,7 +60,7 @@ jobs:
         run: |
           cd artifacts
           gh release create \
-            --verify-tag \
             --title "Release ${{ github.ref_name }}" \
-            "${{ github.ref_name }}" \
+            --target "${{ github.ref_name }}" \
+            test \
             SHASUM256.txt *-latest/*.tar.gz
