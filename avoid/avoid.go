@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"io/ioutil"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/mergetb/tech/stor"
@@ -25,23 +24,27 @@ func WithAvoid(endpoint string, f func(TunnelClient) error) error {
 	return f(client)
 }
 
+type Endpoint struct {
+	Address string `yaml:address",omitempty"` // Address and Port should be on VPN for traffic to go over VPN
+	Port    int    `yaml:port",omitempty"`    // Address and Port should be on VPN for traffic to go over VPN
+}
+
 // https://pulwar.isi.edu/sabres/orchestrator/-/blob/main/pkg/config.go
 type ServiceConfig struct {
-	Address  string          `yaml:address",omitempty"` // Address and Port should be on VPN for traffic to go over VPN
-	Port     int             `yaml:port",omitempty"`    // Address and Port should be on VPN for traffic to go over VPN
-	TLS      *stor.TLSConfig `yaml:tls",omitempty"`
-	Timeout  int             `yaml:timeout",omitempty"`
-	Identity string          `yaml:identity",omitempty"`
+	Endpoints []*Endpoint     `yaml:address",omitempty"` // Address and Port should be on VPN for traffic to go over VPN
+	TLS       *stor.TLSConfig `yaml:tls",omitempty"`
+	Timeout   int             `yaml:timeout",omitempty"`
+	Identity  string          `yaml:identity",omitempty"`
 }
 
 // ServicesConfig encapsulates information for communicating with services.
 type ServicesConfig struct {
-	Avoid *ServiceConfig `yaml:",omitempty"`
+	Avoid *ServiceConfig `yaml:avoid",omitempty"`
 }
 
 // Endpoint returns the endpoint string of a service config.
-func (s *ServiceConfig) Endpoint() string {
-	return fmt.Sprintf("%s:%d", s.Address, s.Port)
+func (ep *Endpoint) ToAddr() string {
+	return fmt.Sprintf("%s:%d", ep.Address, ep.Port)
 }
 
 func LoadConfig(configPath string) (*ServicesConfig, error) {
@@ -68,6 +71,7 @@ func LoadConfig(configPath string) (*ServicesConfig, error) {
 }
 
 // TODO: When we persist data
+/*
 func SetAvoidSettings(config *ServicesConfig) (*stor.Config, error) {
 	cfg := &stor.Config{}
 
@@ -82,3 +86,4 @@ func SetAvoidSettings(config *ServicesConfig) (*stor.Config, error) {
 
 	return cfg, nil
 }
+*/

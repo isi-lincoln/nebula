@@ -1,0 +1,4 @@
+avoid:
+  address: 192.168.0.10
+  port: 55554
+  identity: 12345

@@ -149,34 +149,42 @@ func (n *connectionManager) AddTrafficWatch(localIndex uint32) {
 
 // Lincoln: TODO
 // Add features to register - our we registering an ip? a name? a certificate?
-func (n *connectionManager) registerAvoid(cfg *avoid.ServiceConfig) {
+func (n *connectionManager) registerAvoid(eps []*avoid.Endpoint) *avoid.Endpoint {
 
-	// addr shouldnt be null as we check before calling register
-	addr := cfg.Endpoint()
+	for _, ep := range eps {
+		// addr shouldnt be null as we check before calling register
+		addr := ep.ToAddr()
 
-	// todo: send in tls info
-	avoid.WithAvoid(addr, func(c avoid.TunnelClient) error {
-		req := &avoid.RegisterRequest{}
-		n.l.Debugf("sent register request\n")
-		resp, err := c.Register(context.TODO(), req)
-		if err != nil {
-			n.l.WithError(err).Error("failed to register")
+		// todo: send in tls info
+		err := avoid.WithAvoid(addr, func(c avoid.TunnelClient) error {
+			req := &avoid.RegisterRequest{}
+			n.l.Debugf("sent register request\n")
+			resp, err := c.Register(context.TODO(), req)
+			if err != nil {
+				n.l.WithError(err).Error("failed to register")
+			}
+
+			if resp.Token != "" {
+				n.avoidToken = resp.Token
+			} else {
+				// invalidate
+				n.avoidToken = ""
+			}
+
+			n.l.Infof("Registered. Received Client Token: %s\n", resp.Token)
+
+			return nil
+		})
+
+		if err == nil {
+			return ep
 		}
+	}
 
-		if resp.Token != "" {
-			n.avoidToken = resp.Token
-		} else {
-			// invalidate
-			n.avoidToken = ""
-		}
-
-		n.l.Infof("Registered. Received Client Token: %s\n", resp.Token)
-
-		return nil
-	})
+	return nil
 }
 
-func (n *connectionManager) watchAvoid(cfg *avoid.ServiceConfig, ctx context.Context) {
+func (n *connectionManager) watchAvoid(eps *avoid.Endpoint, ctx context.Context) {
 	if n.avoidToken == "" {
 		// TODO: We now have a conn without avoid - probably want to kill nebula
 		n.l.Errorf("no token has been set for watch\n")
@@ -187,7 +195,7 @@ func (n *connectionManager) watchAvoid(cfg *avoid.ServiceConfig, ctx context.Con
 	}
 
 	// addr shouldnt be null as we check before calling register
-	addr := cfg.Endpoint()
+	addr := eps.ToAddr()
 
 	for {
 		avoid.WithAvoid(addr, func(c avoid.TunnelClient) error {
@@ -229,15 +237,28 @@ func (n *connectionManager) Start(ctx context.Context) {
 	cfg, err := avoid.LoadConfig("/etc/avoid/config.yaml")
 	if err != nil {
 		n.l.WithError(err).Errorf("Error reading avoid configuration file")
+		return
 	}
 	if cfg.Avoid != nil {
-		if cfg.Avoid.Port == 0 || cfg.Avoid.Address == "" {
-			n.l.Errorf("Address:Port fields missing from configuration file")
+		if len(cfg.Avoid.Endpoints) < 1 {
+			n.l.Errorf("Endpoints missing")
 			// TODO: same thing we should kill nebula if we have a conn without avoid
 			return
 		}
-		n.registerAvoid(cfg.Avoid)
-		go n.watchAvoid(cfg.Avoid, ctx)
+		for _, ep := range cfg.Avoid.Endpoints {
+			if ep.Port == 0 || ep.Address == "" {
+				n.l.Errorf("Address:Port fields missing from endpoint: %v", ep)
+				// TODO: same thing we should kill nebula if we have a conn without avoid
+				return
+			}
+		}
+		ep := n.registerAvoid(cfg.Avoid.Endpoints)
+		if ep == nil {
+				n.l.Errorf("Unable to register with any endpoint: %#v", cfg.Avoid.Endpoints)
+				// TODO: same thing we should kill nebula if we have a conn without avoid
+				return
+		}
+		go n.watchAvoid(ep, ctx)
 	} else {
 		n.l.Errorf("No avoid configuration file found")
 	}
