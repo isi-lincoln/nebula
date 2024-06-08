@@ -128,7 +128,7 @@ func GetStatsFunc(ue string) {
 
 		fmt.Printf("Statistics:\n")
 		for k, v := range resp.Stats {
-			fmt.Printf("\t%s: %s\n", k, v)
+			fmt.Printf("\t%v: %s\n", k, v)
 		}
 
 		return nil
@@ -147,7 +147,7 @@ func ListConnectionsFunc() {
 		fmt.Printf("Connections:\n")
 		fmt.Printf("\tName: Uuid\t\tDuration\t\tLast Seen\n")
 		for _, v := range resp.Info {
-			fmt.Printf("\t%s: %s\t\t%s\t\t%s\n", v.Name, v.Duration, v.Lastseen)
+			fmt.Printf("\t%s: %v\t\t%v\n", v.Name, v.Duration, v.Lastseen)
 		}
 
 		return nil
