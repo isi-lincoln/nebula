@@ -2,14 +2,94 @@ package avoid
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"io/ioutil"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/slackhq/nebula/config"
 	"gitlab.com/mergetb/tech/stor"
 	grpc "google.golang.org/grpc"
 	"gopkg.in/yaml.v2"
 )
+
+// TODO: Make this all atomics
+type Avoid struct {
+	client   atomic.Bool
+	manager  atomic.Bool
+	config   string
+	identity string
+	primary  *Endpoint
+	backups  []*Endpoint
+	l        *log.Logger
+}
+
+func NewAvoidFromConfig(l *log.Logger, c *config.C) *Avoid {
+	av := &Avoid{l: l}
+
+	av.reload(c, true)
+	c.RegisterReloadCallback(func(c *config.C) {
+		av.reload(c, false)
+	})
+
+	return av
+}
+
+func (av *Avoid) reload(c *config.C, initial bool) {
+	// TODO: initial value
+	var fp string
+	if !c.IsSet("avoid") {
+		av = &Avoid{}
+		return
+	} else {
+		fp = c.GetString("avoid.config", "")
+		if fp == "" {
+			av.l.Errorf("Avoid not configured, but required\n")
+			return
+		}
+		av.config = fp
+
+		cfg, err := LoadConfig(fp)
+		if err != nil {
+			av.l.WithField("err", err).Errorf("Failed to load avoid config file\n")
+			return
+		}
+		if cfg.Identity == "" {
+			av.l.Errorf("No identity specified\n")
+			return
+		}
+		av.identity = cfg.Identity
+
+		if (cfg.Manager == nil && cfg.Client == nil) || (cfg.Manager != nil && cfg.Client != nil) {
+			av.l.Errorf("Client or Manager (mutually exclusive) must be set\n")
+			return
+		}
+		if cfg.Manager != nil {
+			av.manager.Store(true)
+			av.client.Store(false)
+			if cfg.Manager.Endpoints != nil {
+				if len(cfg.Manager.Endpoints) != 1 {
+					av.l.Errorf("Manager should only have 1 endpoint\n")
+					return
+				}
+				av.primary = cfg.Manager.Endpoints[0]
+			}
+		} else {
+			av.client.Store(true)
+			av.manager.Store(false)
+			if cfg.Manager.Endpoints != nil {
+				if len(cfg.Manager.Endpoints) < 1 {
+					av.l.Errorf("Client must have at least 1 endpoint\n")
+					return
+				}
+				av.primary = cfg.Manager.Endpoints[0]
+				if len(cfg.Manager.Endpoints) > 1 {
+					av.backups = cfg.Manager.Endpoints[1:len(cfg.Manager.Endpoints)]
+				}
+			}
+		}
+	}
+}
 
 // TODO: Add grpc tls options
 func WithAvoid(endpoint string, f func(TunnelClient) error) error {
@@ -34,12 +114,13 @@ type ServiceConfig struct {
 	Endpoints []*Endpoint     `yaml:address",omitempty"` // Address and Port should be on VPN for traffic to go over VPN
 	TLS       *stor.TLSConfig `yaml:tls",omitempty"`
 	Timeout   int             `yaml:timeout",omitempty"`
-	Identity  string          `yaml:identity",omitempty"`
 }
 
 // ServicesConfig encapsulates information for communicating with services.
 type ServicesConfig struct {
-	Avoid *ServiceConfig `yaml:avoid",omitempty"`
+	Client   *ServiceConfig `yaml:client",omitempty"`
+	Manager  *ServiceConfig `yaml:manager",omitempty"`
+	Identity string         `yaml:identity",omitempty"`
 }
 
 // Endpoint returns the endpoint string of a service config.

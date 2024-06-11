@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/slackhq/nebula/avoid"
 	"github.com/slackhq/nebula/config"
 	"github.com/slackhq/nebula/overlay"
 	"github.com/slackhq/nebula/sshd"
@@ -185,6 +186,7 @@ func Main(c *config.C, configTest bool, buildVersion string, logger *logrus.Logg
 
 	hostMap := NewHostMapFromConfig(l, tunCidr, c)
 	punchy := NewPunchyFromConfig(l, c)
+	avoidConf := avoid.NewAvoidFromConfig(l, c)
 	lightHouse, err := NewLightHouseFromConfig(ctx, l, c, tunCidr, udpConns[0], punchy)
 	if err != nil {
 		return nil, util.ContextualizeIfNeeded("Failed to initialize lighthouse handler", err)
@@ -245,6 +247,7 @@ func Main(c *config.C, configTest bool, buildVersion string, logger *logrus.Logg
 		version:                 buildVersion,
 		relayManager:            NewRelayManager(ctx, l, hostMap, c),
 		punchy:                  punchy,
+		avoidConf:               avoidConf,
 
 		ConntrackCacheTimeout: conntrackCacheTimeout,
 		l:                     l,

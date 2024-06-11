@@ -3,7 +3,6 @@ package nebula
 import (
 	"bytes"
 	"context"
-	"io"
 	"sync"
 	"time"
 
@@ -29,20 +28,21 @@ const (
 )
 
 type connectionManager struct {
-	in     					map[uint32]struct{}
-	inLock 					*sync.RWMutex
-	out     				map[uint32]struct{}
-	outLock 				*sync.RWMutex
+	in      map[uint32]struct{}
+	inLock  *sync.RWMutex
+	out     map[uint32]struct{}
+	outLock *sync.RWMutex
 
 	// relayUsed holds which relay localIndexs are in use
-	relayUsed     			map[uint32]struct{}
-	relayUsedLock 			*sync.RWMutex
+	relayUsed     map[uint32]struct{}
+	relayUsedLock *sync.RWMutex
 
-	hostMap 				*HostMap
+	hostMap                 *HostMap
 	trafficTimer            *LockingTimerWheel[uint32]
 	intf                    *Interface
 	pendingDeletion         map[uint32]struct{}
 	punchy                  *Punchy
+	avoidConf               *avoid.Avoid
 	checkInterval           time.Duration
 	pendingDeletionInterval time.Duration
 	metricsTxPunchy         metrics.Counter
@@ -52,7 +52,7 @@ type connectionManager struct {
 	l *logrus.Logger
 }
 
-func newConnectionManager(ctx context.Context, l *logrus.Logger, intf *Interface, checkInterval, pendingDeletionInterval time.Duration, punchy *Punchy) *connectionManager {
+func newConnectionManager(ctx context.Context, l *logrus.Logger, intf *Interface, checkInterval, pendingDeletionInterval time.Duration, punchy *Punchy, av *avoid.Avoid) *connectionManager {
 	var max time.Duration
 	if checkInterval < pendingDeletionInterval {
 		max = pendingDeletionInterval
@@ -74,6 +74,7 @@ func newConnectionManager(ctx context.Context, l *logrus.Logger, intf *Interface
 		checkInterval:           checkInterval,
 		pendingDeletionInterval: pendingDeletionInterval,
 		punchy:                  punchy,
+		avoidConf:               av,
 		metricsTxPunchy:         metrics.GetOrRegisterCounter("messages.tx.punchy", nil),
 		l:                       l,
 	}
@@ -149,7 +150,8 @@ func (n *connectionManager) AddTrafficWatch(localIndex uint32) {
 
 // Lincoln: TODO
 // Add features to register - our we registering an ip? a name? a certificate?
-func (n *connectionManager) registerAvoid(eps []*avoid.Endpoint) *avoid.Endpoint {
+/*
+func (n *connectionManager) registerAvoid() {
 
 	for _, ep := range eps {
 		// addr shouldnt be null as we check before calling register
@@ -225,6 +227,7 @@ func (n *connectionManager) watchAvoid(eps *avoid.Endpoint, ctx context.Context)
 		})
 	}
 }
+*/
 
 func (n *connectionManager) Start(ctx context.Context) {
 	go n.Run(ctx)
@@ -234,34 +237,36 @@ func (n *connectionManager) Start(ctx context.Context) {
 
 	time.Sleep(1 * time.Second)
 
-	cfg, err := avoid.LoadConfig("/etc/avoid/config.yaml")
-	if err != nil {
-		n.l.WithError(err).Errorf("Error reading avoid configuration file")
-		return
-	}
-	if cfg.Avoid != nil {
-		if len(cfg.Avoid.Endpoints) < 1 {
-			n.l.Errorf("Endpoints missing")
-			// TODO: same thing we should kill nebula if we have a conn without avoid
+	/*
+		cfg, err := avoid.LoadConfig("/etc/avoid/config.yaml")
+		if err != nil {
+			n.l.WithError(err).Errorf("Error reading avoid configuration file")
 			return
 		}
-		for _, ep := range cfg.Avoid.Endpoints {
-			if ep.Port == 0 || ep.Address == "" {
-				n.l.Errorf("Address:Port fields missing from endpoint: %v", ep)
+		if cfg.Avoid != nil {
+			if len(cfg.Avoid.Endpoints) < 1 {
+				n.l.Errorf("Endpoints missing")
 				// TODO: same thing we should kill nebula if we have a conn without avoid
 				return
 			}
-		}
-		ep := n.registerAvoid(cfg.Avoid.Endpoints)
-		if ep == nil {
+			for _, ep := range cfg.Avoid.Endpoints {
+				if ep.Port == 0 || ep.Address == "" {
+					n.l.Errorf("Address:Port fields missing from endpoint: %v", ep)
+					// TODO: same thing we should kill nebula if we have a conn without avoid
+					return
+				}
+			}
+			ep := n.registerAvoid(cfg.Avoid.Endpoints)
+			if ep == nil {
 				n.l.Errorf("Unable to register with any endpoint: %#v", cfg.Avoid.Endpoints)
 				// TODO: same thing we should kill nebula if we have a conn without avoid
 				return
+			}
+			go n.watchAvoid(ep, ctx)
+		} else {
+			n.l.Errorf("No avoid configuration file found")
 		}
-		go n.watchAvoid(ep, ctx)
-	} else {
-		n.l.Errorf("No avoid configuration file found")
-	}
+	*/
 }
 
 func (n *connectionManager) Run(ctx context.Context) {
