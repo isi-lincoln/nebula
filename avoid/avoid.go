@@ -3,10 +3,12 @@ package avoid
 import (
 	"fmt"
 
+	"io/ioutil"
+
 	log "github.com/sirupsen/logrus"
-	"github.com/slackhq/nebula/config"
-	"go.uber.org/atomic"
+	"gitlab.com/mergetb/tech/stor"
 	grpc "google.golang.org/grpc"
+	"gopkg.in/yaml.v2"
 )
 
 // TODO: Add grpc tls options
@@ -22,103 +24,66 @@ func WithAvoid(endpoint string, f func(TunnelClient) error) error {
 	return f(client)
 }
 
-type Avoid struct {
-	manager  atomic.Bool
-	client   atomic.Bool
-	port     atomic.Uint32
-	address  string
-	identity string
-	l        *log.Logger
-	//endpoints atomic.Pointer[[]string]
+type Endpoint struct {
+	Address string `yaml:address",omitempty"` // Address and Port should be on VPN for traffic to go over VPN
+	Port    int    `yaml:port",omitempty"`    // Address and Port should be on VPN for traffic to go over VPN
 }
 
-func NewAvoidFromConfig(l *log.Logger, c *config.C) *Avoid {
-	av := &Avoid{l: l}
-
-	av.reload(c, true)
-	c.RegisterReloadCallback(func(c *config.C) {
-		av.reload(c, false)
-	})
-
-	return av
+// https://pulwar.isi.edu/sabres/orchestrator/-/blob/main/pkg/config.go
+type ServiceConfig struct {
+	Endpoints []*Endpoint     `yaml:address",omitempty"` // Address and Port should be on VPN for traffic to go over VPN
+	TLS       *stor.TLSConfig `yaml:tls",omitempty"`
+	Timeout   int             `yaml:timeout",omitempty"`
+	Identity  string          `yaml:identity",omitempty"`
 }
 
-func (av *Avoid) reload(c *config.C, initial bool) {
-	if initial {
-		var isManager bool
+// ServicesConfig encapsulates information for communicating with services.
+type ServicesConfig struct {
+	Avoid *ServiceConfig `yaml:avoid",omitempty"`
+}
 
-		if c.IsSet("avoid.manager") {
-			isManager = c.GetBool("avoid.manager", false)
-		}
+// Endpoint returns the endpoint string of a service config.
+func (ep *Endpoint) ToAddr() string {
+	return fmt.Sprintf("%s:%d", ep.Address, ep.Port)
+}
 
-		av.manager.Store(isManager)
-		av.client.Store(!isManager)
-
-		if isManager {
-			av.l.Info("avoid manager enabled")
-		} else {
-			av.l.Info("avoid client enabled")
-		}
-
-	} else if c.HasChanged("avoid.manager") || c.HasChanged("avoid.client") {
-		//TODO:
-		// when a client becomes manager or vise versa
-		av.l.Warn("Changing avoid config with reload is not supported, ignoring.")
+func LoadConfig(configPath string) (*ServicesConfig, error) {
+	data, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		log.Errorf("could not read configuration file %s", configPath)
+		return nil, err
 	}
 
-	/*
-		if initial || c.HasChanged("avoid.address") {
-			av.address.Store(c.GetString("avoid.address"))
-			if !initial {
-				av.l.WithField("port", av.GetAddress()).Info("avoid.address changed")
-			}
-		}
-	*/
-	// TODO: put into pointer
-	av.address = c.GetString("avoid.address", "")
-	if av.address == "" {
-		av.l.Errorf("No address has been set\n")
-		log.Fatal("No address has been set")
+	log.Infof("%s", data)
+
+	cfg := &ServicesConfig{}
+	err = yaml.Unmarshal(data, cfg)
+	if err != nil {
+		log.Errorf("could not parse configuration file")
+		return nil, err
 	}
 
-	if initial || c.HasChanged("avoid.port") {
-		av.port.Store(c.GetUint32("avoid.port", 55554))
-		if !initial {
-			av.l.WithField("port", av.GetPort()).Info("avoid.port changed")
-		}
+	log.WithFields(log.Fields{
+		"config": fmt.Sprintf("%+v", *cfg),
+	}).Debug("config")
+
+	return cfg, nil
+}
+
+// TODO: When we persist data
+/*
+func SetAvoidSettings(config *ServicesConfig) (*stor.Config, error) {
+	cfg := &stor.Config{}
+
+	if config.Avoid != nil {
+		cfg.Address = config.Avoid.Address
+		cfg.Port = config.Avoid.Port
+		cfg.TLS = config.Avoid.TLS
+		cfg.Timeout = time.Duration(config.Avoid.Timeout) * time.Millisecond
+	} else {
+		return nil, fmt.Errorf("No Avoid config found.\n")
 	}
 
-	/*
-		if initial || c.HasChanged("avoid.identity") {
-			av.identity.Store(c.GetString("avoid.identity"))
-			if !initial {
-				av.l.WithField("identity", av.GetIdentity()).Info("avoid.identity changed")
-			}
-		}
-	*/
-	av.identity = c.GetString("avoid.identity", "")
-	if av.identity == "" {
-		av.l.Errorf("No identity has been set\n")
-		log.Fatal("No identity has been set")
-	}
+	return cfg, nil
 }
-
-func (av *Avoid) GetManager() bool {
-	return av.manager.Load()
-}
-
-func (av *Avoid) GetClient() bool {
-	return av.client.Load()
-}
-
-func (av *Avoid) GetAddress() string {
-	return av.address
-}
-
-func (av *Avoid) GetPort() uint32 {
-	return av.port.Load()
-}
-
-func (av *Avoid) GetIdentity() string {
-	return av.identity
-}
+*/

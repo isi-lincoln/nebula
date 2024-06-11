@@ -1,0 +1,9 @@
+avoid:
+  endpoints:
+    - address: 192.168.0.10
+      port: 55554
+    - address: 192.168.0.11
+      port: 55554
+    - address: 192.168.0.12
+      port: 55554
+  identity: 12345

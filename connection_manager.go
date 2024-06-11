@@ -3,7 +3,7 @@ package nebula
 import (
 	"bytes"
 	"context"
-//	"io"
+	"io"
 	"sync"
 	"time"
 
@@ -52,7 +52,7 @@ type connectionManager struct {
 	l *logrus.Logger
 }
 
-func newConnectionManager(ctx context.Context, l *logrus.Logger, intf *Interface, checkInterval, pendingDeletionInterval time.Duration, punchy *Punchy, aSettings *avoid.Avoid) *connectionManager {
+func newConnectionManager(ctx context.Context, l *logrus.Logger, intf *Interface, checkInterval, pendingDeletionInterval time.Duration, punchy *Punchy) *connectionManager {
 	var max time.Duration
 	if checkInterval < pendingDeletionInterval {
 		max = pendingDeletionInterval
@@ -149,7 +149,6 @@ func (n *connectionManager) AddTrafficWatch(localIndex uint32) {
 
 // Lincoln: TODO
 // Add features to register - our we registering an ip? a name? a certificate?
-/*
 func (n *connectionManager) registerAvoid(eps []*avoid.Endpoint) *avoid.Endpoint {
 
 	for _, ep := range eps {
@@ -227,74 +226,42 @@ func (n *connectionManager) watchAvoid(eps *avoid.Endpoint, ctx context.Context)
 	}
 }
 
-func StartAvoidEndpoint() {
-	tunAddr, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *tunnelServer, *tunnelPort))
-	grpcTunnelServer := grpc.NewServer()
-	avoid.RegisterTunnelServer(grpcTunnelServer, &pkg.TunnelServer{Updates: make(map[string]*pkg.TunnelUpdate)})
-	grpcTunnelServer.Serve(tunAddr)
-}
-*/
-
 func (n *connectionManager) Start(ctx context.Context) {
 	go n.Run(ctx)
 
+	// begin avoidConn connection
+	// I think this is the correct place, we want to make sure we have a connection manager
+
 	time.Sleep(1 * time.Second)
 
-	/*
 	cfg, err := avoid.LoadConfig("/etc/avoid/config.yaml")
 	if err != nil {
 		n.l.WithError(err).Errorf("Error reading avoid configuration file")
 		return
 	}
 	if cfg.Avoid != nil {
-		if cfg.Avoid.Client != nil {
-			client := cfg.Avoid.Client
-			if len(client.Endpoints) < 1 {
-				n.l.Errorf("Endpoints missing\n")
+		if len(cfg.Avoid.Endpoints) < 1 {
+			n.l.Errorf("Endpoints missing")
+			// TODO: same thing we should kill nebula if we have a conn without avoid
+			return
+		}
+		for _, ep := range cfg.Avoid.Endpoints {
+			if ep.Port == 0 || ep.Address == "" {
+				n.l.Errorf("Address:Port fields missing from endpoint: %v", ep)
 				// TODO: same thing we should kill nebula if we have a conn without avoid
 				return
 			}
-			for _, ep := range client.Endpoints {
-				if ep.Port == 0 || ep.Address == "" {
-					n.l.Errorf("Address:Port fields missing from endpoint: %v\n", ep)
-					// TODO: same thing we should kill nebula if we have a conn without avoid
-					return
-				}
-			}
-
-			ep := n.registerAvoid(cfg.Avoid.Endpoints)
-			if ep == nil {
-					n.l.Errorf("Unable to register with any endpoint: %#v\n", cfg.Avoid.Endpoints)
-					// TODO: same thing we should kill nebula if we have a conn without avoid
-					return
-			}
-
-			// do avoid things
-			go n.watchAvoid(ep, ctx)
-
-		} else if cfg.Avoid.Manager != nil {
-			manager := cfg.Avoid.Manager
-			if !manager.Manager {
-				n.l.Errorf("Avoid config has manager section but is not a manager\n")
-				return
-			}
-
-			if manager.Local == nil || manager.Overlay == nil {
-				n.l.Errorf("Addresses and ports not configured for manager\n")
-				return
-			}
-
-			// start the avoid services.
-
-
-		} else {
-
 		}
-
+		ep := n.registerAvoid(cfg.Avoid.Endpoints)
+		if ep == nil {
+				n.l.Errorf("Unable to register with any endpoint: %#v", cfg.Avoid.Endpoints)
+				// TODO: same thing we should kill nebula if we have a conn without avoid
+				return
+		}
+		go n.watchAvoid(ep, ctx)
 	} else {
-		n.l.Errorf("No avoid configuration file found!\n")
+		n.l.Errorf("No avoid configuration file found")
 	}
-	*/
 }
 
 func (n *connectionManager) Run(ctx context.Context) {
