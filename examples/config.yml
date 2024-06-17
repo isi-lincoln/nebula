@@ -35,6 +35,9 @@ static_host_map:
   # lookup_timeout is the DNS query timeout.
   #lookup_timeout: 250ms
 
+avoid:
+  config: "/etc/avoid/avoid.yaml"
+
 lighthouse:
   # am_lighthouse is used to enable lighthouse functionality for a node. This should ONLY be true on nodes
   # you have configured to be lighthouses in your network

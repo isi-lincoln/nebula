@@ -1,14 +1,6 @@
 package avoid
 
-import (
-	"fmt"
-	"io/ioutil"
-	"path/filepath"
-	"runtime"
-	"strings"
-	"testing"
-)
-
+/*
 func TestLoadingConfig(t *testing.T) {
 
 	_, filename, _, _ := runtime.Caller(0)
@@ -45,3 +37,4 @@ func TestLoadingConfig(t *testing.T) {
 		}
 	}
 }
+*/

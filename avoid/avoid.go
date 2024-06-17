@@ -54,11 +54,6 @@ func (av *Avoid) reload(c *config.C, initial bool) {
 			av.l.WithField("err", err).Errorf("Failed to load avoid config file\n")
 			return
 		}
-		if cfg.Identity == "" {
-			av.l.Errorf("No identity specified\n")
-			return
-		}
-		av.identity = cfg.Identity
 
 		if (cfg.Manager == nil && cfg.Client == nil) || (cfg.Manager != nil && cfg.Client != nil) {
 			av.l.Errorf("Client or Manager (mutually exclusive) must be set\n")
@@ -67,24 +62,43 @@ func (av *Avoid) reload(c *config.C, initial bool) {
 		if cfg.Manager != nil {
 			av.manager.Store(true)
 			av.client.Store(false)
-			if cfg.Manager.Endpoints != nil {
-				if len(cfg.Manager.Endpoints) != 1 {
-					av.l.Errorf("Manager should only have 1 endpoint\n")
-					return
-				}
-				av.primary = cfg.Manager.Endpoints[0]
+			log.Infof("%#v\n", cfg.Manager)
+			if cfg.Manager.EP != nil {
+				av.primary = cfg.Manager.EP
+			} else {
+				av.l.Errorf("Manager requires an endpoint\n")
+				return
 			}
 		} else {
+			if cfg.Client.Identity == "" {
+				av.l.Errorf("No identity specified\n")
+				return
+			}
+			av.identity = cfg.Client.Identity
+
 			av.client.Store(true)
 			av.manager.Store(false)
-			if cfg.Manager.Endpoints != nil {
-				if len(cfg.Manager.Endpoints) < 1 {
+			if cfg.Client.EP != nil {
+				if len(cfg.Client.EP) < 1 {
 					av.l.Errorf("Client must have at least 1 endpoint\n")
 					return
 				}
-				av.primary = cfg.Manager.Endpoints[0]
-				if len(cfg.Manager.Endpoints) > 1 {
-					av.backups = cfg.Manager.Endpoints[1:len(cfg.Manager.Endpoints)]
+				if len(cfg.Client.EP) > 1 {
+					av.backups = cfg.Client.EP[:len(cfg.Client.EP)]
+				}
+				for _, v := range cfg.Client.EP {
+					if v.Primary {
+						av.primary = v
+						break
+					}
+				}
+				if av.primary == nil {
+					if len(av.backups) > 1 {
+						av.primary, av.backups = av.backups[0], av.backups[1:]
+					} else {
+						av.primary = av.backups[0]
+						av.backups = nil
+					}
 				}
 			}
 		}
@@ -105,22 +119,28 @@ func WithAvoid(endpoint string, f func(TunnelClient) error) error {
 }
 
 type Endpoint struct {
-	Address string `yaml:address",omitempty"` // Address and Port should be on VPN for traffic to go over VPN
-	Port    int    `yaml:port",omitempty"`    // Address and Port should be on VPN for traffic to go over VPN
+	Address string          `yaml:address",omitempty"` // Address and Port should be on VPN for traffic to go over VPN
+	Port    int             `yaml:port",omitempty"`    // Address and Port should be on VPN for traffic to go over VPN
+	TLS     *stor.TLSConfig `yaml:tls",omitempty"`
+	Timeout int             `yaml:timeout",omitempty"`
+	Primary bool            `yaml:primary",omitempty"`
 }
 
 // https://pulwar.isi.edu/sabres/orchestrator/-/blob/main/pkg/config.go
-type ServiceConfig struct {
-	Endpoints []*Endpoint     `yaml:address",omitempty"` // Address and Port should be on VPN for traffic to go over VPN
-	TLS       *stor.TLSConfig `yaml:tls",omitempty"`
-	Timeout   int             `yaml:timeout",omitempty"`
+type ClientServiceConfig struct {
+	EP       []*Endpoint `yaml:endpoints",omitempty"`
+	Identity string      `yaml:identity",omitempty"`
+}
+
+type ManagerServiceConfig struct {
+	EP   *Endpoint `yaml:endpoint",omitempty"`
+	Test string    `yaml:test",omitempty"`
 }
 
 // ServicesConfig encapsulates information for communicating with services.
 type ServicesConfig struct {
-	Client   *ServiceConfig `yaml:client",omitempty"`
-	Manager  *ServiceConfig `yaml:manager",omitempty"`
-	Identity string         `yaml:identity",omitempty"`
+	Client  *ClientServiceConfig  `yaml:client",omitempty"`
+	Manager *ManagerServiceConfig `yaml:manager",omitempty"`
 }
 
 // Endpoint returns the endpoint string of a service config.
@@ -146,7 +166,19 @@ func LoadConfig(configPath string) (*ServicesConfig, error) {
 
 	log.WithFields(log.Fields{
 		"config": fmt.Sprintf("%+v", *cfg),
-	}).Debug("config")
+	}).Info("config")
+
+	if cfg.Client != nil {
+		log.WithFields(log.Fields{
+			"client": fmt.Sprintf("%+v", *cfg.Client),
+		}).Info("client")
+	}
+
+	if cfg.Manager != nil {
+		log.WithFields(log.Fields{
+			"manager": fmt.Sprintf("%+v", *cfg.Manager),
+		}).Info("manager")
+	}
 
 	return cfg, nil
 }
