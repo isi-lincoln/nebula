@@ -305,6 +305,19 @@ func Main(c *config.C, configTest bool, buildVersion string, logger *logrus.Logg
 		dnsStart = dnsMain(l, hostMap, c)
 	}
 
+	var avoidStart func()
+	if avoidConf != nil {
+		if avoidConf.GetManager() {
+			l.Infof("Starting avoid server\n")
+			// TODO: what other hooks do i need to kill
+			// connections
+			avoidStart = avoidTunnel(l, c, avoidConf)
+			if avoidStart == nil {
+				return nil, fmt.Errorf("Failed to get avoid service up")
+			}
+		}
+	}
+
 	return &Control{
 		ifce,
 		l,
@@ -313,6 +326,7 @@ func Main(c *config.C, configTest bool, buildVersion string, logger *logrus.Logg
 		sshStart,
 		statsStart,
 		dnsStart,
+		avoidStart,
 		lightHouse.StartUpdateWorker,
 	}, nil
 }

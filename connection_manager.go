@@ -4,19 +4,16 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"net"
 	"sync"
 	"time"
 
 	"github.com/rcrowley/go-metrics"
 	"github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
-	"github.com/slackhq/nebula/avoid/service/tunnel"
 	"github.com/slackhq/nebula/cert"
 	"github.com/slackhq/nebula/header"
 	"github.com/slackhq/nebula/iputil"
 	"github.com/slackhq/nebula/udp"
-	"google.golang.org/grpc"
 )
 
 type trafficDecision int
@@ -260,31 +257,15 @@ func (n *connectionManager) watchAvoid(ep *avoid.Endpoint, ctx context.Context) 
 	}
 }
 
-func (n *connectionManager) startAvoidManager(primary *avoid.Endpoint) {
-	// could we also use ?
-	// n.intf.myVpnIp
-
-	addr := primary.ToAddr()
-	n.l.Infof("starting avoid tunnel api: %s", addr)
-
-	tunAddr, err := net.Listen("tcp", addr)
-	if err != nil {
-		n.l.Fatalf("avoid: failed to listen on %s: %v", addr, err)
-	}
-
-	n.avoidStarted = true
-	grpcTunnelServer := grpc.NewServer()
-	avoid.RegisterTunnelServer(
-		grpcTunnelServer,
-		tunnel.NewTunnelServer(),
-	)
-	grpcTunnelServer.Serve(tunAddr)
-}
-
 func (n *connectionManager) Start(ctx context.Context) {
+	go n.Run(ctx)
+
+	//TODO: this is a hack, we really want to do this
+	// after the second stage handshacke succeeds
+	time.Sleep(1 * time.Second)
+
 	if n.avoidConf != nil {
 		av := n.avoidConf
-		mgr := av.GetManager()
 		client := av.GetClient()
 		primary := av.GetPrimary()
 		backups := av.GetBackups()
@@ -293,11 +274,6 @@ func (n *connectionManager) Start(ctx context.Context) {
 			// TODO: we should kill nebula if we have a conn without avoid
 			n.l.Errorf("No primary was found: %#v", av)
 			return
-		}
-		if mgr {
-			if !n.avoidStarted {
-				go n.startAvoidManager(primary)
-			}
 		}
 		if client {
 			ep := n.registerAvoid(primary, backups)
@@ -310,13 +286,6 @@ func (n *connectionManager) Start(ctx context.Context) {
 	} else {
 		n.l.Errorf("No avoid configuration found")
 	}
-
-	// begin avoidConn connection
-	// I think this is the correct place, we want to make sure we have a connection manager
-
-	time.Sleep(1 * time.Second)
-
-	go n.Run(ctx)
 }
 
 func (n *connectionManager) Run(ctx context.Context) {

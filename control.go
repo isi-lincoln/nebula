@@ -36,6 +36,7 @@ type Control struct {
 	statsStart      func()
 	dnsStart        func()
 	lighthouseStart func()
+	avoidStart      func()
 }
 
 type ControlHostInfo struct {
@@ -64,6 +65,9 @@ func (c *Control) Start() {
 	}
 	if c.dnsStart != nil {
 		go c.dnsStart()
+	}
+	if c.avoidStart != nil {
+		go c.avoidStart()
 	}
 	if c.lighthouseStart != nil {
 		c.lighthouseStart()
