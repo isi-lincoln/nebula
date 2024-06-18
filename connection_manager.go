@@ -150,14 +150,16 @@ func (n *connectionManager) AddTrafficWatch(localIndex uint32) {
 
 // Lincoln: TODO
 // Add features to register - our we registering an ip? a name? a certificate?
-func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries []*avoid.Endpoint) *avoid.Endpoint {
+func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries []*avoid.Endpoint, ident string) *avoid.Endpoint {
 
 	// addr shouldnt be null as we check before calling register
 	addr := primary.ToAddr()
 
 	// todo: send in tls info
 	err := avoid.WithAvoid(addr, func(c avoid.TunnelClient) error {
-		req := &avoid.RegisterRequest{}
+		req := &avoid.RegisterRequest{
+			Req: ident,
+		}
 		n.l.Debugf("sent register request\n")
 		resp, err := c.Register(context.TODO(), req)
 		if err != nil {
@@ -259,37 +261,43 @@ func (n *connectionManager) Start(ctx context.Context) {
 	go n.Run(ctx)
 
 	if n.avoidConf != nil {
-		go func() {
-			for {
-				if n.intf == nil {
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
-				if n.intf.myVpnIp == 0 {
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
-
-				av := n.avoidConf
-				client := av.GetClient()
-				primary := av.GetPrimary()
-				backups := av.GetBackups()
-				if primary == nil {
-					n.l.Fatalf("No primary was found: %#v\n", av)
-				}
-
-				n.l.Infof("have ip: %s", n.intf.myVpnIp.String())
-
-				if client {
-					ep := n.registerAvoid(primary, backups)
-					if ep == nil {
-						n.l.Fatalf("Unable to register with any endpoints\n")
+		if n.avoidConf.GetClient() {
+			go func() {
+				for {
+					if n.intf == nil {
+						time.Sleep(100 * time.Millisecond)
+						continue
 					}
-					n.watchAvoid(ep, ctx)
+					if n.intf.myVpnIp == 0 {
+						time.Sleep(100 * time.Millisecond)
+						continue
+					}
+
+					av := n.avoidConf
+					client := av.GetClient()
+					primary := av.GetPrimary()
+					backups := av.GetBackups()
+					identity := av.GetIdentity()
+					if primary == nil {
+						n.l.Fatalf("No primary was found: %#v\n", av)
+					}
+					if identity == "" {
+						n.l.Fatalf("No identity provided: %+v\n", av)
+					}
+
+					n.l.Infof("have ip: %s", n.intf.myVpnIp.String())
+
+					if client {
+						ep := n.registerAvoid(primary, backups, identity)
+						if ep == nil {
+							n.l.Fatalf("Unable to register with any endpoints\n")
+						}
+						n.watchAvoid(ep, ctx)
+					}
+					time.Sleep(1 * time.Second)
 				}
-				time.Sleep(1 * time.Second)
-			}
-		}()
+			}()
+		}
 	} else {
 		n.l.Fatalf("No avoid configuration found\n")
 	}

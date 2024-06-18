@@ -121,7 +121,7 @@ func (s *TunnelServer) Register(ctx context.Context, req *avoid.RegisterRequest)
 		return nil, fmt.Errorf("%s", errMsg)
 	}
 
-	log.Infof("Register\n")
+	log.Infof("Register request: %v\n", req)
 
 	// TODO: Register
 
