@@ -35,6 +35,26 @@ func NewAvoidFromConfig(l *log.Logger, c *config.C) *Avoid {
 	return av
 }
 
+func (av *Avoid) GetPrimary() *Endpoint {
+	return av.primary
+}
+
+func (av *Avoid) GetBackups() []*Endpoint {
+	return av.backups
+}
+
+func (av *Avoid) GetClient() bool {
+	return av.client.Load()
+}
+
+func (av *Avoid) GetManager() bool {
+	return av.manager.Load()
+}
+
+func (av *Avoid) GetIdentity() string {
+	return av.identity
+}
+
 func (av *Avoid) reload(c *config.C, initial bool) {
 	// TODO: initial value
 	var fp string

@@ -3,16 +3,20 @@ package nebula
 import (
 	"bytes"
 	"context"
+	"io"
+	"net"
 	"sync"
 	"time"
 
 	"github.com/rcrowley/go-metrics"
 	"github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
+	"github.com/slackhq/nebula/avoid/service/tunnel"
 	"github.com/slackhq/nebula/cert"
 	"github.com/slackhq/nebula/header"
 	"github.com/slackhq/nebula/iputil"
 	"github.com/slackhq/nebula/udp"
+	"google.golang.org/grpc"
 )
 
 type trafficDecision int
@@ -48,6 +52,7 @@ type connectionManager struct {
 	metricsTxPunchy         metrics.Counter
 	avoidConn               *avoid.TunnelServer
 	avoidToken              string
+	avoidStarted            bool
 
 	l *logrus.Logger
 }
@@ -150,10 +155,37 @@ func (n *connectionManager) AddTrafficWatch(localIndex uint32) {
 
 // Lincoln: TODO
 // Add features to register - our we registering an ip? a name? a certificate?
-/*
-func (n *connectionManager) registerAvoid() {
+func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries []*avoid.Endpoint) *avoid.Endpoint {
 
-	for _, ep := range eps {
+	// addr shouldnt be null as we check before calling register
+	addr := primary.ToAddr()
+
+	// todo: send in tls info
+	err := avoid.WithAvoid(addr, func(c avoid.TunnelClient) error {
+		req := &avoid.RegisterRequest{}
+		n.l.Debugf("sent register request\n")
+		resp, err := c.Register(context.TODO(), req)
+		if err != nil {
+			n.l.WithError(err).Error("failed to register")
+		}
+
+		if resp.Token != "" {
+			n.avoidToken = resp.Token
+		} else {
+			// invalidate
+			n.avoidToken = ""
+		}
+
+		n.l.Infof("Registered. Received Client Token: %s\n", resp.Token)
+
+		return nil
+	})
+
+	if err == nil {
+		return primary
+	}
+
+	for _, ep := range secondaries {
 		// addr shouldnt be null as we check before calling register
 		addr := ep.ToAddr()
 
@@ -186,7 +218,7 @@ func (n *connectionManager) registerAvoid() {
 	return nil
 }
 
-func (n *connectionManager) watchAvoid(eps *avoid.Endpoint, ctx context.Context) {
+func (n *connectionManager) watchAvoid(ep *avoid.Endpoint, ctx context.Context) {
 	if n.avoidToken == "" {
 		// TODO: We now have a conn without avoid - probably want to kill nebula
 		n.l.Errorf("no token has been set for watch\n")
@@ -197,7 +229,7 @@ func (n *connectionManager) watchAvoid(eps *avoid.Endpoint, ctx context.Context)
 	}
 
 	// addr shouldnt be null as we check before calling register
-	addr := eps.ToAddr()
+	addr := ep.ToAddr()
 
 	for {
 		avoid.WithAvoid(addr, func(c avoid.TunnelClient) error {
@@ -227,46 +259,64 @@ func (n *connectionManager) watchAvoid(eps *avoid.Endpoint, ctx context.Context)
 		})
 	}
 }
-*/
+
+func (n *connectionManager) startAvoidManager(primary *avoid.Endpoint) {
+	// could we also use ?
+	// n.intf.myVpnIp
+
+	addr := primary.ToAddr()
+	n.l.Infof("starting avoid tunnel api: %s", addr)
+
+	tunAddr, err := net.Listen("tcp", addr)
+	if err != nil {
+		n.l.Fatalf("avoid: failed to listen on %s: %v", addr, err)
+	}
+
+	n.avoidStarted = true
+	grpcTunnelServer := grpc.NewServer()
+	avoid.RegisterTunnelServer(
+		grpcTunnelServer,
+		tunnel.NewTunnelServer(),
+	)
+	grpcTunnelServer.Serve(tunAddr)
+}
 
 func (n *connectionManager) Start(ctx context.Context) {
-	go n.Run(ctx)
+	if n.avoidConf != nil {
+		av := n.avoidConf
+		mgr := av.GetManager()
+		client := av.GetClient()
+		primary := av.GetPrimary()
+		backups := av.GetBackups()
+		if primary == nil {
+			// TODO: error management
+			// TODO: we should kill nebula if we have a conn without avoid
+			n.l.Errorf("No primary was found: %#v", av)
+			return
+		}
+		if mgr {
+			if !n.avoidStarted {
+				go n.startAvoidManager(primary)
+			}
+		}
+		if client {
+			ep := n.registerAvoid(primary, backups)
+			if ep == nil {
+				n.l.Errorf("Unable to register with any endpoints")
+				return
+			}
+			go n.watchAvoid(ep, ctx)
+		}
+	} else {
+		n.l.Errorf("No avoid configuration found")
+	}
 
 	// begin avoidConn connection
 	// I think this is the correct place, we want to make sure we have a connection manager
 
 	time.Sleep(1 * time.Second)
 
-	/*
-		cfg, err := avoid.LoadConfig("/etc/avoid/config.yaml")
-		if err != nil {
-			n.l.WithError(err).Errorf("Error reading avoid configuration file")
-			return
-		}
-		if cfg.Avoid != nil {
-			if len(cfg.Avoid.Endpoints) < 1 {
-				n.l.Errorf("Endpoints missing")
-				// TODO: same thing we should kill nebula if we have a conn without avoid
-				return
-			}
-			for _, ep := range cfg.Avoid.Endpoints {
-				if ep.Port == 0 || ep.Address == "" {
-					n.l.Errorf("Address:Port fields missing from endpoint: %v", ep)
-					// TODO: same thing we should kill nebula if we have a conn without avoid
-					return
-				}
-			}
-			ep := n.registerAvoid(cfg.Avoid.Endpoints)
-			if ep == nil {
-				n.l.Errorf("Unable to register with any endpoint: %#v", cfg.Avoid.Endpoints)
-				// TODO: same thing we should kill nebula if we have a conn without avoid
-				return
-			}
-			go n.watchAvoid(ep, ctx)
-		} else {
-			n.l.Errorf("No avoid configuration file found")
-		}
-	*/
+	go n.Run(ctx)
 }
 
 func (n *connectionManager) Run(ctx context.Context) {
