@@ -125,7 +125,7 @@ func (s *TunnelServer) Register(ctx context.Context, req *avoid.RegisterRequest)
 
 	// TODO: Register
 
-	return &avoid.RegisterReply{Token: "TODO"}, nil
+	return &avoid.RegisterReply{Token: req.Req}, nil
 }
 
 func (s *TunnelServer) HealthCheck(ctx context.Context, req *avoid.HealthRequest) (*avoid.HealthReply, error) {

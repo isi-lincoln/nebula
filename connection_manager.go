@@ -47,9 +47,7 @@ type connectionManager struct {
 	checkInterval           time.Duration
 	pendingDeletionInterval time.Duration
 	metricsTxPunchy         metrics.Counter
-	avoidConn               *avoid.TunnelServer
 	avoidToken              string
-	avoidStarted            bool
 
 	l *logrus.Logger
 }
@@ -260,31 +258,40 @@ func (n *connectionManager) watchAvoid(ep *avoid.Endpoint, ctx context.Context) 
 func (n *connectionManager) Start(ctx context.Context) {
 	go n.Run(ctx)
 
-	//TODO: this is a hack, we really want to do this
-	// after the second stage handshacke succeeds
-	time.Sleep(1 * time.Second)
-
 	if n.avoidConf != nil {
-		av := n.avoidConf
-		client := av.GetClient()
-		primary := av.GetPrimary()
-		backups := av.GetBackups()
-		if primary == nil {
-			// TODO: error management
-			// TODO: we should kill nebula if we have a conn without avoid
-			n.l.Errorf("No primary was found: %#v", av)
-			return
-		}
-		if client {
-			ep := n.registerAvoid(primary, backups)
-			if ep == nil {
-				n.l.Errorf("Unable to register with any endpoints")
-				return
+		go func() {
+			for {
+				if n.intf == nil {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				if n.intf.myVpnIp == 0 {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+
+				av := n.avoidConf
+				client := av.GetClient()
+				primary := av.GetPrimary()
+				backups := av.GetBackups()
+				if primary == nil {
+					n.l.Fatalf("No primary was found: %#v\n", av)
+				}
+
+				n.l.Infof("have ip: %s", n.intf.myVpnIp.String())
+
+				if client {
+					ep := n.registerAvoid(primary, backups)
+					if ep == nil {
+						n.l.Fatalf("Unable to register with any endpoints\n")
+					}
+					n.watchAvoid(ep, ctx)
+				}
+				time.Sleep(1 * time.Second)
 			}
-			go n.watchAvoid(ep, ctx)
-		}
+		}()
 	} else {
-		n.l.Errorf("No avoid configuration found")
+		n.l.Fatalf("No avoid configuration found\n")
 	}
 }
 

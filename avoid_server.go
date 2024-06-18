@@ -10,6 +10,23 @@ import (
 	"google.golang.org/grpc"
 )
 
+func startTunnel(l *logrus.Logger, addr string) {
+	// TODO: maybe better to just use myVPNip
+	l.Infof("starting avoid tunnel api: %s", addr)
+
+	tunAddr, err := net.Listen("tcp", addr)
+	if err != nil {
+		l.Fatalf("avoid: failed to listen on %s: %v", addr, err)
+	}
+
+	grpcTunnelServer := grpc.NewServer()
+	avoid.RegisterTunnelServer(
+		grpcTunnelServer,
+		tunnel.NewTunnelServer(),
+	)
+	grpcTunnelServer.Serve(tunAddr)
+}
+
 func avoidTunnel(l *logrus.Logger, c *config.C, av *avoid.Avoid) func() {
 	if av != nil {
 		mgr := av.GetManager()
@@ -19,22 +36,9 @@ func avoidTunnel(l *logrus.Logger, c *config.C, av *avoid.Avoid) func() {
 			return nil
 		}
 		if mgr {
+			addr := primary.ToAddr()
 			return func() {
-				// TODO: maybe better to just use myVPNip
-				addr := primary.ToAddr()
-				l.Infof("starting avoid tunnel api: %s", addr)
-
-				tunAddr, err := net.Listen("tcp", addr)
-				if err != nil {
-					l.Fatalf("avoid: failed to listen on %s: %v", addr, err)
-				}
-
-				grpcTunnelServer := grpc.NewServer()
-				avoid.RegisterTunnelServer(
-					grpcTunnelServer,
-					tunnel.NewTunnelServer(),
-				)
-				grpcTunnelServer.Serve(tunAddr)
+				go startTunnel(l, addr)
 			}
 		}
 	}

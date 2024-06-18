@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 
 	log "github.com/sirupsen/logrus"
@@ -12,22 +11,21 @@ import (
 )
 
 var (
-	server string
-	port   int
-	addr   string
-	root   = &cobra.Command{
+	clientServer string
+	clientPort   int
+)
+
+func main() {
+	root := &cobra.Command{
 		Use:   "avoid",
 		Short: "avoid controller",
 	}
-)
 
-func init() {
-	flag.IntVar(&port, "port", 55554, "avoid server port")
-	flag.StringVar(&server, "server", "localhost", "avoid server address")
-	addr = fmt.Sprintf("%s:%d", server, port)
-}
+	root.PersistentFlags().StringVarP(
+		&clientServer, "server", "s", "localhost", "inventory service address to use")
+	root.PersistentFlags().IntVarP(
+		&clientPort, "port", "p", 55554, "inventory service port to use")
 
-func main() {
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "list endpoint related data",
@@ -104,6 +102,7 @@ func MigrateUEFunc(name, typeMigrate, value string) {
 		return
 	}
 
+	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
 	withAvoid(addr, func(c avoid.TunnelClient) error {
 		log.Debugf("sending migrate request: %v\n", req)
 		resp, err := c.Migrate(context.TODO(), req)
@@ -118,6 +117,7 @@ func MigrateUEFunc(name, typeMigrate, value string) {
 }
 
 func GetStatsFunc(ue string) {
+	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
 	withAvoid(addr, func(c avoid.TunnelClient) error {
 		req := &avoid.StatsRequest{Name: ue}
 		log.Debugf("sent request: %v\n", req)
@@ -136,6 +136,7 @@ func GetStatsFunc(ue string) {
 }
 
 func ListConnectionsFunc() {
+	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
 	withAvoid(addr, func(c avoid.TunnelClient) error {
 		req := &avoid.ListRequest{}
 		log.Debugf("sent list request\n")
