@@ -62,7 +62,6 @@ func (av *Avoid) reload(c *config.C, initial bool) {
 		if cfg.Manager != nil {
 			av.manager.Store(true)
 			av.client.Store(false)
-			log.Infof("%#v\n", cfg.Manager)
 			if cfg.Manager.EP != nil {
 				av.primary = cfg.Manager.EP
 			} else {
@@ -78,17 +77,25 @@ func (av *Avoid) reload(c *config.C, initial bool) {
 
 			av.client.Store(true)
 			av.manager.Store(false)
-			if cfg.Client.EP != nil {
-				if len(cfg.Client.EP) < 1 {
+			if cfg.Client.EPS != nil {
+				if len(cfg.Client.EPS) < 1 {
 					av.l.Errorf("Client must have at least 1 endpoint\n")
 					return
 				}
-				if len(cfg.Client.EP) > 1 {
-					av.backups = cfg.Client.EP[:len(cfg.Client.EP)]
+				if len(cfg.Client.EPS) >= 1 {
+					av.backups = cfg.Client.EPS[:len(cfg.Client.EPS)]
 				}
-				for _, v := range cfg.Client.EP {
+				for _, v := range cfg.Client.EPS {
 					if v.Primary {
 						av.primary = v
+						index := 0
+						for i, vv := range av.backups {
+							if v == vv {
+								index = i
+								break
+							}
+						}
+						av.backups = append(av.backups[:index], av.backups[index+1:]...)
 						break
 					}
 				}
@@ -128,13 +135,12 @@ type Endpoint struct {
 
 // https://pulwar.isi.edu/sabres/orchestrator/-/blob/main/pkg/config.go
 type ClientServiceConfig struct {
-	EP       []*Endpoint `yaml:endpoints",omitempty"`
+	EPS      []*Endpoint `yaml:eps",omitempty"`
 	Identity string      `yaml:identity",omitempty"`
 }
 
 type ManagerServiceConfig struct {
-	EP   *Endpoint `yaml:endpoint",omitempty"`
-	Test string    `yaml:test",omitempty"`
+	EP *Endpoint `yaml:ep",omitempty"`
 }
 
 // ServicesConfig encapsulates information for communicating with services.
@@ -166,18 +172,18 @@ func LoadConfig(configPath string) (*ServicesConfig, error) {
 
 	log.WithFields(log.Fields{
 		"config": fmt.Sprintf("%+v", *cfg),
-	}).Info("config")
+	}).Debug("config")
 
 	if cfg.Client != nil {
 		log.WithFields(log.Fields{
 			"client": fmt.Sprintf("%+v", *cfg.Client),
-		}).Info("client")
+		}).Debug("client")
 	}
 
 	if cfg.Manager != nil {
 		log.WithFields(log.Fields{
 			"manager": fmt.Sprintf("%+v", *cfg.Manager),
-		}).Info("manager")
+		}).Debug("manager")
 	}
 
 	return cfg, nil

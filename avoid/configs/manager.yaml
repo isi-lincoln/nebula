@@ -1,5 +1,4 @@
 manager:
-  endpoint:
+  ep:
     address: 192.168.0.10
     port: 55554
-  test: 1234
