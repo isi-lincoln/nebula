@@ -10,7 +10,7 @@ service Tunnel {
   rpc ListConnections (ListRequest) returns (ListReply) {}
   rpc GetStats (StatsRequest) returns (StatsReply) {}
   rpc Migrate (MigrateRequest) returns (MigrateReply) {}
-  rpc Shutdown (ShutdownRequest) returns (ShutdownReply) {}
+  rpc Disconnect (DisconnectRequest) returns (DisconnectReply) {}
 
   // client
   rpc Register (RegisterRequest) returns (RegisterReply) {}
@@ -19,10 +19,11 @@ service Tunnel {
   rpc Watch (ConnectionRequest) returns (stream ConnectionReply) {}
 }
 
-message ShutdownRequest{
+message DisconnectRequest {
   string name = 1;
+  ConnectionReply disconnect = 2;
 }
-message ShutdownReply{}
+message DisconnectReply{}
 
 message ConnInfo {
   string name = 1;
@@ -94,12 +95,13 @@ message HealthReply {
 }
 
 message ConnectionReply{
-  enum New {
+  enum ConnType {
     None = 0;
     Lighthouse = 1;
     Endpoint = 2;
     Radio = 3;
     Network = 4;
+    Relay = 5;
   }
   enum ServingStatus {
     UNKNOWN = 0;
@@ -108,7 +110,7 @@ message ConnectionReply{
     SERVICE_UNKNOWN = 3;
   }
 
-  New Connection = 1;
+  ConnType Connection = 1;
   string value = 2;
   ServingStatus status = 3;
 }

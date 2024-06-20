@@ -44,6 +44,12 @@ func main() {
 	}
 	root.AddCommand(migrate)
 
+	disconnect := &cobra.Command{
+		Use:   "disconnect",
+		Short: "disconnect UE from network",
+	}
+	root.AddCommand(disconnect)
+
 	ListConnInfo := &cobra.Command{
 		Use:   "conn",
 		Short: "list connections associated with this endpoint",
@@ -65,7 +71,7 @@ func main() {
 	get.AddCommand(GetStatsUE)
 
 	MigrateUE := &cobra.Command{
-		Use:   "ue <id> <lighthouse|endpoint|radio|network> <value>",
+		Use:   "ue <id> <lighthouse|endpoint|radio|network|relay> <value>",
 		Short: "move the UE to another thing",
 		Long:  "tell the UE through nebula tunnel that it needs to change values",
 		Args:  cobra.ExactArgs(3),
@@ -75,7 +81,38 @@ func main() {
 	}
 	migrate.AddCommand(MigrateUE)
 
+	DisconnectUE := &cobra.Command{
+		Use:   "ue <uuid> <endpoint>",
+		Short: "disconnect UE from avoid",
+		Long:  "tell the UE through nebula tunnel to disconnect",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			DisconnectUEFunc(args[0], args[1])
+		},
+	}
+	disconnect.AddCommand(DisconnectUE)
+
 	root.Execute()
+}
+
+func DisconnectUEFunc(name, value string) {
+	req := &avoid.DisconnectRequest{
+		Name:       name,
+		Disconnect: &avoid.ConnectionReply{Value: value},
+	}
+
+	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
+	withAvoid(addr, func(c avoid.TunnelClient) error {
+		log.Debugf("sending disconnect request: %v\n", req)
+		_, err := c.Disconnect(context.TODO(), req)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Printf("Disconnect Message Sent\n")
+
+		return nil
+	})
 }
 
 func MigrateUEFunc(name, typeMigrate, value string) {
@@ -96,6 +133,9 @@ func MigrateUEFunc(name, typeMigrate, value string) {
 		break
 	case "network":
 		req.Migrate.Connection = avoid.ConnectionReply_Network
+		break
+	case "relay":
+		req.Migrate.Connection = avoid.ConnectionReply_Relay
 		break
 	default:
 		log.Errorf("unknown migration type: %s\n", typeMigrate)

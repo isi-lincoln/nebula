@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 	"time"
+	"fmt"
 
 	"github.com/rcrowley/go-metrics"
 	"github.com/sirupsen/logrus"
@@ -215,6 +216,29 @@ func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries [
 	return nil
 }
 
+
+// we assume that avoid will be sending us an ip address
+// avoid will need to track the dns - ip mappings
+func (n *connectionManager) killConnection(target string) error {
+	n.l.Infof("removing %s from our hostmap\n")
+
+	vpnInfo := iputil.Ip2VpnIp([]byte(target))
+	hostinfo, ok := n.hostMap.Hosts[vpnInfo]
+	if !ok {
+		// TODO: we need to send a message back to ack or nack
+		n.l.Errorf("failed to find host in hostmap\n")
+		return  fmt.Errorf("failed to find host in hostmap: %s", target)
+	}
+
+	// close the tunnel and remove hostinfo, from outside.go
+	// closeTunnel will delete our local hostinfo
+	n.intf.sendCloseTunnel(hostinfo)
+	n.intf.closeTunnel(hostinfo)
+
+	n.l.Infof("disconnected from tunnel: (%s,%s)\n", n.intf.myVpnIp.String(), target)
+	return nil
+}
+
 func (n *connectionManager) watchAvoid(ep *avoid.Endpoint, ctx context.Context) {
 	if n.avoidToken == "" {
 		// TODO: We now have a conn without avoid - probably want to kill nebula
@@ -250,8 +274,67 @@ func (n *connectionManager) watchAvoid(ep *avoid.Endpoint, ctx context.Context) 
 				}
 
 				n.l.Infof("%s: %s -> %s", resp.Connection, resp.Value, resp.Status)
-				// TODO: Lincoln, okay we got something, now what.
-				// We have the teh connection manager, so we can pivot it from here
+				switch resp.Status {
+					case avoid.ConnectionReply_NOT_SERVING:
+						return n.killConnection(resp.Value)
+						// disconnect request
+					case avoid.ConnectionReply_SERVING:
+					case avoid.ConnectionReply_UNKNOWN:
+					case avoid.ConnectionReply_SERVICE_UNKNOWN:
+						break
+					default:
+						break
+				}
+
+				// step 1: kill the connection to that endpoint
+				// step 2: connect to new entity
+				// step 3: if the endpoint was avoid, re-connect to avoid
+				switch resp.Connection {
+				case avoid.ConnectionReply_Lighthouse:
+					n.l.Infof("Received migrate on lighthouse\n")
+					break
+				case avoid.ConnectionReply_Endpoint:
+					n.l.Infof("Received migrate on endpoint\n")
+					break
+				case avoid.ConnectionReply_Relay:
+					n.l.Infof("Received migrate on relay\n")
+					//func (n *connectionManager) migrateRelayUsed(oldhostinfo, newhostinfo *HostInfo) {
+					// step 1: check if we can get the host infos
+					//index, err = AddRelay(n.l, newhostinfo, n.hostMap, r.PeerIp, nil, r.Type, Requested)
+
+
+					// We want to make sure we only use this function when sending data out
+					//f.SendVia(relayHostInfo, relay, out, nb, fullOut[:header.Len+len(out)], true)
+
+					// delete all relays and hostmaps
+					for localIndex, relay := range n.hostMap.Relays {
+
+						// TODO: if the Relay we are migrating to is already in relay list
+						// dont remove it
+						n.hostMap.RemoveRelay(localIndex)
+						n.hostMap.DeleteHostInfo(relay)
+					}
+					
+					// create a new hostinfo for new relay
+
+					// add new hostinfo into the relays
+					//index, err = AddRelay(n.l, newhostinfo, n.hostMap, r.PeerIp, nil, r.Type, Requested)
+
+
+
+					break
+				case avoid.ConnectionReply_Radio:
+					n.l.Infof("Received migrate on radio\n")
+					break
+				case avoid.ConnectionReply_Network:
+					n.l.Infof("Received migrate on network\n")
+					break
+				case avoid.ConnectionReply_None:
+					n.l.Infof("Received migrate on lighthouse\n")
+					break
+				default:
+					break
+				}
 			}
 		})
 	}

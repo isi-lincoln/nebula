@@ -100,18 +100,38 @@ func (s *TunnelServer) Migrate(ctx context.Context, req *avoid.MigrateRequest) (
 	return &avoid.MigrateReply{}, nil
 }
 
-func (s *TunnelServer) Shutdown(ctx context.Context, req *avoid.ShutdownRequest) (*avoid.ShutdownReply, error) {
+func (s *TunnelServer) Disconnect(ctx context.Context, req *avoid.DisconnectRequest) (*avoid.DisconnectReply, error) {
 	if req == nil {
-		errMsg := fmt.Sprintf("Invalid Request: Shutdown")
+		errMsg := fmt.Sprintf("Invalid Request: Disconnect")
 		log.Errorf("%s", errMsg)
 		return nil, fmt.Errorf("%s", errMsg)
 	}
 
-	log.Infof("Shutdown: %v", req)
+	log.Infof("Disconnect: %v", req)
 
-	// TODO: Shutdown/Revocation
+	s.mu.Lock()
+	_, ok := s.updates[req.Name]
+	if !ok {
+		s.updates[req.Name] = &TunnelUpdate{
+			Watch:   nil,
+			Ch:      make(chan avoid.ConnectionReply_ServingStatus, 1),
+			Current: avoid.ConnectionReply_SERVICE_UNKNOWN,
+			Data: &avoid.ConnectionReply{
+				Status: avoid.ConnectionReply_SERVICE_UNKNOWN,
+				Value:  "",
+			},
+		}
+	} else {
+		tmp := &avoid.ConnectionReply{
+			Status: avoid.ConnectionReply_NOT_SERVING,
+			Value:  req.Disconnect.Value,
+		}
+		s.updates[req.Name].Data = tmp
+	}
+	s.updates[req.Name].Ch <- avoid.ConnectionReply_SERVING
+	s.mu.Unlock()
 
-	return &avoid.ShutdownReply{}, nil
+	return &avoid.DisconnectReply{}, nil
 }
 
 func (s *TunnelServer) Register(ctx context.Context, req *avoid.RegisterRequest) (*avoid.RegisterReply, error) {
