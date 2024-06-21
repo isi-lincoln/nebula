@@ -220,12 +220,12 @@ func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries [
 // we assume that avoid will be sending us an ip address
 // avoid will need to track the dns - ip mappings
 func (n *connectionManager) killConnection(target string) error {
-	n.l.Infof("removing %s from our hostmap\n")
+	n.l.Infof("removing %s from our hostmap\n", target)
 
 	// saftey check on the client
 	addr := net.ParseIP(target)
 	if addr == nil {
-		n.l.Errorf("unable to convert %s to an ip address\n", addr)
+		n.l.Errorf("unable to convert %s to an ip address\n", target)
 		return fmt.Errorf("non-ip target: %s", target)
 	}
 	vpnInfo := iputil.Ip2VpnIp([]byte(target))
@@ -262,7 +262,7 @@ func (n *connectionManager) watchAvoid(ep *avoid.Endpoint, ctx context.Context) 
 	for {
 		avoid.WithAvoid(addr, func(c avoid.TunnelClient) error {
 
-			stream, err := c.Watch(context.Background(), req)
+			stream, err := c.Watch(context.Background())
 			if err != nil {
 				n.l.WithError(err).Errorf("Watch backoff: 5 seconds\n")
 				time.Sleep(5 * time.Second)

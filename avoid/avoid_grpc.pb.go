@@ -42,7 +42,7 @@ type TunnelClient interface {
 	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterReply, error)
 	TokenReplace(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*RegisterReply, error)
 	HealthCheck(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthReply, error)
-	Watch(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (Tunnel_WatchClient, error)
+	Watch(ctx context.Context, opts ...grpc.CallOption) (Tunnel_WatchClient, error)
 }
 
 type tunnelClient struct {
@@ -123,29 +123,28 @@ func (c *tunnelClient) HealthCheck(ctx context.Context, in *HealthRequest, opts 
 	return out, nil
 }
 
-func (c *tunnelClient) Watch(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (Tunnel_WatchClient, error) {
+func (c *tunnelClient) Watch(ctx context.Context, opts ...grpc.CallOption) (Tunnel_WatchClient, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Tunnel_ServiceDesc.Streams[0], Tunnel_Watch_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	x := &tunnelWatchClient{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
 	return x, nil
 }
 
 type Tunnel_WatchClient interface {
+	Send(*ConnectionRequest) error
 	Recv() (*ConnectionReply, error)
 	grpc.ClientStream
 }
 
 type tunnelWatchClient struct {
 	grpc.ClientStream
+}
+
+func (x *tunnelWatchClient) Send(m *ConnectionRequest) error {
+	return x.ClientStream.SendMsg(m)
 }
 
 func (x *tunnelWatchClient) Recv() (*ConnectionReply, error) {
@@ -169,7 +168,7 @@ type TunnelServer interface {
 	Register(context.Context, *RegisterRequest) (*RegisterReply, error)
 	TokenReplace(context.Context, *ConnectionRequest) (*RegisterReply, error)
 	HealthCheck(context.Context, *HealthRequest) (*HealthReply, error)
-	Watch(*ConnectionRequest, Tunnel_WatchServer) error
+	Watch(Tunnel_WatchServer) error
 	mustEmbedUnimplementedTunnelServer()
 }
 
@@ -198,7 +197,7 @@ func (UnimplementedTunnelServer) TokenReplace(context.Context, *ConnectionReques
 func (UnimplementedTunnelServer) HealthCheck(context.Context, *HealthRequest) (*HealthReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HealthCheck not implemented")
 }
-func (UnimplementedTunnelServer) Watch(*ConnectionRequest, Tunnel_WatchServer) error {
+func (UnimplementedTunnelServer) Watch(Tunnel_WatchServer) error {
 	return status.Errorf(codes.Unimplemented, "method Watch not implemented")
 }
 func (UnimplementedTunnelServer) mustEmbedUnimplementedTunnelServer() {}
@@ -341,15 +340,12 @@ func _Tunnel_HealthCheck_Handler(srv interface{}, ctx context.Context, dec func(
 }
 
 func _Tunnel_Watch_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(ConnectionRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(TunnelServer).Watch(m, &tunnelWatchServer{ServerStream: stream})
+	return srv.(TunnelServer).Watch(&tunnelWatchServer{ServerStream: stream})
 }
 
 type Tunnel_WatchServer interface {
 	Send(*ConnectionReply) error
+	Recv() (*ConnectionRequest, error)
 	grpc.ServerStream
 }
 
@@ -359,6 +355,14 @@ type tunnelWatchServer struct {
 
 func (x *tunnelWatchServer) Send(m *ConnectionReply) error {
 	return x.ServerStream.SendMsg(m)
+}
+
+func (x *tunnelWatchServer) Recv() (*ConnectionRequest, error) {
+	m := new(ConnectionRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // Tunnel_ServiceDesc is the grpc.ServiceDesc for Tunnel service.
@@ -402,6 +406,7 @@ var Tunnel_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "Watch",
 			Handler:       _Tunnel_Watch_Handler,
 			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "avoid/avoid.proto",

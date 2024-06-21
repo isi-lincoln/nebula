@@ -16,14 +16,16 @@ service Tunnel {
   rpc Register (RegisterRequest) returns (RegisterReply) {}
   rpc TokenReplace (ConnectionRequest) returns (RegisterReply) {}
   rpc HealthCheck (HealthRequest) returns (HealthReply) {}
-  rpc Watch (ConnectionRequest) returns (stream ConnectionReply) {}
+  rpc Watch (stream ConnectionRequest) returns (stream ConnectionReply) {}
 }
 
 message DisconnectRequest {
   string name = 1;
   ConnectionReply disconnect = 2;
 }
-message DisconnectReply{}
+message DisconnectReply{
+  ConnInfo disconnect = 1;
+}
 
 message ConnInfo {
   string name = 1;
@@ -31,11 +33,14 @@ message ConnInfo {
   string path = 3;
   string endpoint = 4;
   string network = 5;
-  string user = 6;
-  int64 duration = 7;
-  int64 lastseen = 8;
-  int64 download = 9;
-  int64 upload = 10;
+  string relay = 6;
+  string user = 7;
+  int64 duration = 8;
+  int64 lastseen = 9;
+  int64 download = 10;
+  int64 upload = 11;
+  bool error = 12;
+  string errMsg = 13;
 }
 
 message ListRequest {}
@@ -43,37 +48,21 @@ message ListReply {
   repeated ConnInfo info = 1;
 }
 
-message Statistics {
-  string name = 1;
-  string connectedran = 2;
-  string nearbyran = 3;
-  string path = 4;
-  string endpoint = 5;
-  string network = 6;
-  string user = 7;
-  int64 duration = 8;
-  int64 lastseen = 9;
-  int64 download = 10;
-  int64 upload = 11;
-}
-
 message StatsRequest {
   string name = 1;
 }
 message StatsReply {
-  repeated Statistics stats = 1;
+  ConnInfo stats = 1;
 }
 
-message ConnectionRequest{
-  string name = 1;
-  string token = 2;
-}
 
 message MigrateRequest {
   string name = 1;
   ConnectionReply migrate = 2;
 }
-message MigrateReply {}
+message MigrateReply {
+  ConnInfo migrate = 1;
+}
 
 
 
@@ -94,14 +83,15 @@ message HealthReply {
   string json = 1;
 }
 
-message ConnectionReply{
+
+message ConnectionMessage {
   enum ConnType {
-    None = 0;
-    Lighthouse = 1;
-    Endpoint = 2;
-    Radio = 3;
-    Network = 4;
-    Relay = 5;
+    NONE = 0;
+    LIGHTHOUSE = 1;
+    ENDPOINT = 2;
+    RADIO = 3;
+    NETWORK = 4;
+    RELAY = 5;
   }
   enum ServingStatus {
     UNKNOWN = 0;
@@ -109,8 +99,30 @@ message ConnectionReply{
     NOT_SERVING = 2;
     SERVICE_UNKNOWN = 3;
   }
+  enum Action {
+    UNDEFINED = 0;
+    MIGRATE = 1;
+    DISCONNECT = 2;
+    APPEND = 3;
+    PRUNE = 4;
+    FLUSH = 5;
+    STATISTICS = 6;
+  }
 
-  ConnType Connection = 1;
-  string value = 2;
-  ServingStatus status = 3;
+  ConnType connection = 1;
+  ServingStatus status = 2;
+  Action action = 3;
+  string uuid = 4;
+}
+
+message ConnectionRequest{
+  string name = 1;
+  string token = 2;
+  ConnInfo stats = 3;
+  ConnectionMessage Connection = 4;
+}
+
+message ConnectionReply{
+  ConnectionMessage Connection = 1;
+  repeated string value = 2;
 }
