@@ -10,6 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
 	"github.com/slackhq/nebula/avoid/service/tunnel"
+	"gitlab.com/mergetb/tech/stor"
 	"google.golang.org/grpc"
 )
 
@@ -51,6 +52,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to listen on tunnel addr: %v", err)
 	}
+
+	cfg, err := config.LoadConfig(EtcdConfigPath)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	// read in environment variables for container
+	err = config.ReadENVSettings(cfg)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	etcdCfg, err := config.SetEtcdSettings(cfg)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	stor.SetConfig(*etcdCfg)
 
 	grpcTunnelServer := grpc.NewServer()
 	avoid.RegisterTunnelServer(grpcTunnelServer, tunnel.NewTunnelServer())

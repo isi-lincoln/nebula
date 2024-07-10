@@ -192,7 +192,7 @@ bench-cpu-long:
 	go test -bench=. -benchtime=60s -cpuprofile=cpu.pprof
 	go tool pprof go-audit.test cpu.pprof
 
-proto: nebula.pb.go cert/cert.pb.go avoid/avoid_grpc.pb.go
+proto: nebula.pb.go cert/cert.pb.go avoid/client_grpc.pb.go avoid/manager_grpc.pb.go
 
 #go build github.com/gogo/protobuf/protoc-gen-gogofaster
 #PATH="$(CURDIR):$(PATH)" protoc --gogofaster_out=paths=source_relative:. $<
@@ -204,10 +204,15 @@ nebula.pb.go: nebula.proto .FORCE
 	PATH="$(CURDIR):$(PATH)" protoc --gogofaster_out=paths=source_relative:. $<
 	rm protoc-gen-gogofaster
 
-avoid/avoid_grpc.pb.go: avoid/avoid.proto .FORCE
+avoid/client_grpc.pb.go: avoid/client.proto .FORCE
 	protoc -I=. --go_out=. --go_opt=paths=source_relative \
 	--go-grpc_out=. --go-grpc_opt=paths=source_relative  \
-	$< 
+	avoid/messages.proto $<
+
+avoid/manager_grpc.pb.go: avoid/manager.proto .FORCE
+	protoc -I=. --go_out=. --go_opt=paths=source_relative \
+	--go-grpc_out=. --go-grpc_opt=paths=source_relative  \
+	avoid/messages.proto $< 
 
 cert/cert.pb.go: cert/cert.proto .FORCE
 	$(MAKE) -C cert cert.pb.go

@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package avoid.messages;
+
+option go_package = "github.com/slackhq/nebula/avoid";
+
+message ConnectionInfo {
+  string name = 1;
+  string ran = 2;
+  string path = 3;
+  string endpoint = 4;
+  string network = 5;
+  string relay = 6;
+  string user = 7;
+  int64 duration = 8;
+  int64 lastseen = 9;
+  int64 download = 10;
+  int64 upload = 11;
+  bool error = 12;
+  string errMsg = 13;
+}
+
+message ActionMessage {
+  enum ConnType {
+    NONE = 0;
+    LIGHTHOUSE = 1;
+    ENDPOINT = 2;
+    RADIO = 3;
+    NETWORK = 4;
+    RELAY = 5;
+  }
+  enum Action {
+    UNDEFINED = 0;
+    MIGRATE = 1;
+    DISCONNECT = 2;
+    APPEND = 3;
+    PRUNE = 4;
+    FLUSH = 5;
+    STATISTICS = 6;
+  }
+
+  ConnType connection = 1;
+  Action action = 2;
+  string uuid = 3;
+}
+
+message ActionResponse {
+    string value = 1;
+    string error = 2;
+}

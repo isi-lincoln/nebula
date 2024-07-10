@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package avoid.client;
+
+import "avoid/messages.proto";
+
+option go_package = "github.com/slackhq/nebula/avoid";
+
+service AvoidClient {
+  // client
+  rpc Register (RegisterRequest) returns (RegisterReply) {}
+  rpc TokenReplace (ReplaceRequest) returns (ReplaceReply) {}
+  rpc HealthCheck (HealthRequest) returns (HealthReply) {}
+  rpc Action(ActionRequest) returns (ActionReply) {}
+}
+
+message ReplaceRequest {
+  string req = 1;
+  string token = 2;
+}
+
+message ReplaceReply {
+  string token = 1;
+  string resp = 2;
+}
+
+message RegisterRequest {
+  string req = 1;
+}
+
+message RegisterReply {
+  string token = 1;
+}
+
+message HealthRequest {
+  string token = 1;
+}
+
+message HealthReply {
+  avoid.messages.ConnectionInfo info = 1;
+}
+
+message ActionRequest{
+  string name = 1;
+  string token = 2;
+  avoid.messages.ActionMessage action = 3;
+}
+
+message ActionReply{
+  avoid.messages.ActionResponse reply = 1;
+}

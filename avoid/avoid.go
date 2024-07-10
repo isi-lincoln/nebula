@@ -10,6 +10,7 @@ import (
 	"github.com/slackhq/nebula/config"
 	"gitlab.com/mergetb/tech/stor"
 	grpc "google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"gopkg.in/yaml.v2"
 )
 
@@ -23,6 +24,15 @@ type Avoid struct {
 	backups  []*Endpoint
 	l        *log.Logger
 }
+
+const (
+	ClientOnline        = iota
+	ClientOffline       = iota
+	ClientDisconnecting = iota
+	ClientDisconnected  = iota
+	ClientMigrating     = iota
+	ClientConnected     = iota
+)
 
 func NewAvoidFromConfig(l *log.Logger, c *config.C) *Avoid {
 	av := &Avoid{l: l}
@@ -132,14 +142,74 @@ func (av *Avoid) reload(c *config.C, initial bool) {
 	}
 }
 
-// TODO: Add grpc tls options
-func WithAvoid(endpoint string, f func(TunnelClient) error) error {
-	conn, err := grpc.Dial(endpoint, grpc.WithInsecure())
-	if err != nil {
-		return fmt.Errorf("failed to connect to avoid service: %v", err)
+func WithAvoidManager(endpoint string, tlsCfg *stor.TLSConfig, f func(AvoidManagerClient) error) error {
+	var conn *grpc.ClientConn
+	var err error
+
+	if tlsCfg == nil {
+		log.Trace("TLS disabled")
+		conn, err = grpc.NewClient(endpoint, grpc.WithInsecure())
+		if err != nil {
+			return fmt.Errorf("failed to connect to avoid service: %v", err)
+		}
+	} else {
+		log.Trace("TLS enabled")
+
+		log.WithFields(log.Fields{
+			"cacert": tlsCfg.Cacert,
+			"cert":   tlsCfg.Cert,
+			"key":    tlsCfg.Key,
+		}).Trace("TLS config")
+
+		creds, err := credentials.NewClientTLSFromFile(tlsCfg.Cacert, "")
+		if err != nil {
+			return fmt.Errorf("failed to load credentials: %v", err)
+		}
+
+		conn, err = grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
+		if err != nil {
+			return fmt.Errorf("failed to connect to avoid service: %v", err)
+		}
 	}
 
-	client := NewTunnelClient(conn)
+	client := NewAvoidManagerClient(conn)
+	defer conn.Close()
+
+	return f(client)
+}
+
+// TODO: DRY
+func WithAvoidClient(endpoint string, tlsCfg *stor.TLSConfig, f func(AvoidClientClient) error) error {
+	var conn *grpc.ClientConn
+	var err error
+
+	if tlsCfg == nil {
+		log.Trace("TLS disabled")
+		conn, err = grpc.NewClient(endpoint, grpc.WithInsecure())
+		if err != nil {
+			return fmt.Errorf("failed to connect to avoid service: %v", err)
+		}
+	} else {
+		log.Trace("TLS enabled")
+
+		log.WithFields(log.Fields{
+			"cacert": tlsCfg.Cacert,
+			"cert":   tlsCfg.Cert,
+			"key":    tlsCfg.Key,
+		}).Trace("TLS config")
+
+		creds, err := credentials.NewClientTLSFromFile(tlsCfg.Cacert, "")
+		if err != nil {
+			return fmt.Errorf("failed to load credentials: %v", err)
+		}
+
+		conn, err = grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
+		if err != nil {
+			return fmt.Errorf("failed to connect to avoid service: %v", err)
+		}
+	}
+
+	client := NewAvoidClientClient(conn)
 	defer conn.Close()
 
 	return f(client)
@@ -208,21 +278,3 @@ func LoadConfig(configPath string) (*ServicesConfig, error) {
 
 	return cfg, nil
 }
-
-// TODO: When we persist data
-/*
-func SetAvoidSettings(config *ServicesConfig) (*stor.Config, error) {
-	cfg := &stor.Config{}
-
-	if config.Avoid != nil {
-		cfg.Address = config.Avoid.Address
-		cfg.Port = config.Avoid.Port
-		cfg.TLS = config.Avoid.TLS
-		cfg.Timeout = time.Duration(config.Avoid.Timeout) * time.Millisecond
-	} else {
-		return nil, fmt.Errorf("No Avoid config found.\n")
-	}
-
-	return cfg, nil
-}
-*/
