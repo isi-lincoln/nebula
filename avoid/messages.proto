@@ -42,6 +42,7 @@ message ActionMessage {
   ConnType connection = 1;
   Action action = 2;
   string uuid = 3;
+  int64 version = 4;
 }
 
 message ActionResponse {

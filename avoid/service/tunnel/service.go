@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
+	"gitlab.com/mergetb/tech/stor"
 )
 
 type ClientState struct {
@@ -46,22 +47,6 @@ func (s *AvoidManager) ListConnections(ctx context.Context, req *avoid.ListReque
 	return &avoid.ListReply{Info: lr}, nil
 }
 
-/*
-	tu := s.updates[ueUuid]
-	tu.Transition = status
-	tuac := tua.Connection
-	if tuac == nil {
-		log.Errorf("connection is missing from TunnelUpdates for %s: %+v\n", ueUuid, tua)
-		tu.rwmutex.Unlock()
-		return fmt.Errorf("connection missing from updates struct: %s", ueUuid)
-	}
-
-	tuac.Status = status
-	tuac.Connection = ct
-	tuac.Action = action
-	tuac.Uuid = uuid
-*/
-
 func (s *AvoidManager) GetStats(ctx context.Context, req *avoid.StatsRequest) (*avoid.StatsReply, error) {
 	if req == nil {
 		errMsg := fmt.Sprintf("Invalid Request: GetStats")
@@ -74,7 +59,7 @@ func (s *AvoidManager) GetStats(ctx context.Context, req *avoid.StatsRequest) (*
 
 	// TODO: Return Stats
 
-	return &avoid.StatsReply{Stats: msg.Stats}, nil
+	return &avoid.StatsReply{}, nil
 }
 
 func (s *AvoidManager) Migrate(ctx context.Context, req *avoid.MigrateRequest) (*avoid.MigrateReply, error) {
@@ -92,9 +77,13 @@ func (s *AvoidManager) Migrate(ctx context.Context, req *avoid.MigrateRequest) (
 	uuid := uuid.New()
 	log.Infof("Migrate: %s: %v", uuid.String(), req.Migrate)
 
-	am := &avoid.ActionMessage{}
+	am := &avoid.ActionMessage{
+		Connection: Avoid.ctionMessage_LIGHTHOUSE,
+		Action:     &avoid.ActionMessage_MIGRATE,
+		Uuid:       uuid,
+	}
 
-	// TODO: write am to
+	err = stor.WriteObjects[am]
 
 	return &avoid.MigrateReply{Migrate: msg.Stats}, nil
 }
@@ -109,7 +98,7 @@ func (s *AvoidManager) Disconnect(ctx context.Context, req *avoid.DisconnectRequ
 	uuid := uuid.New()
 	log.Infof("Disconnect: %s: %v", uuid.String(), req)
 
-	return &avoid.DisconnectReply{Disconnect: msg.Stats}, nil
+	return &avoid.DisconnectReply{}, nil
 }
 
 func (s *AvoidManager) Register(ctx context.Context, req *avoid.RegisterRequest) (*avoid.RegisterReply, error) {
