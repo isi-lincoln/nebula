@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -18,6 +20,7 @@ import (
 
 var (
 	Build string
+	etcd  *clientv3.Client
 )
 
 type ClientState struct {
@@ -72,6 +75,55 @@ func (s *AvoidManager) GetStats(ctx context.Context, req *avoid.StatsRequest) (*
 	return &avoid.StatsReply{}, nil
 }
 
+func sendToPending(ar *avoid.ActionRequest) error {
+	// create pending action
+	pending := &avoid.Pending{
+		ActionKey: ar.Key(),
+	}
+
+	var err error
+	// TODO: retry loop, make better to handle backoff, etc.
+	for i := 0; i < 10; i++ {
+		// write objects as all or nothing
+		err = stor.WriteObjects(am, pending)
+		if err != nil {
+			log.Warnf("%d: Retrying Write to Pending: %v", i, err)
+			continue
+		}
+		return nil
+	}
+
+	return err
+}
+
+func waitForAction(ar *avoid.ActionRequest, timeout int) (*avoid.ConnectionInfo, error) {
+	key := fmt.Sprintf("%s/%s", avoid.ConnPrefix, ar.Uuid)
+	ctx, cancel := context.WithTimeout(context.TODO(), timeout*time.Second)
+	defer cancel()
+
+	avoid.EnsureEtcd(*etcd)
+	rch := (*etcd).Watch(ctx, key, clientv3.WithPrefix())
+
+	// we've found a key if rch != nil
+	for wresp := range rch {
+		for _, x := range wresp.Events {
+			// cleaning up key event
+			ci := &avoid.ConnectionInfo{}
+			err := json.Unmarshal(x.Kv.Value, ci)
+			if err != nil {
+				// TODO: manage this situation
+				log.Errorf("failed to unmarshal for %s: %v", key, err)
+				return nil, err
+			}
+			return ci, nil
+		}
+
+	}
+
+	// our key was nil because we timed out
+	return nil, nil
+}
+
 func (s *AvoidManager) Migrate(ctx context.Context, req *avoid.MigrateRequest) (*avoid.MigrateReply, error) {
 	if req == nil {
 		errMsg := fmt.Sprintf("Invalid Request: Migrate")
@@ -87,24 +139,37 @@ func (s *AvoidManager) Migrate(ctx context.Context, req *avoid.MigrateRequest) (
 	uuid := uuid.New()
 	log.Infof("Migrate: %s: %v", uuid.String(), req.Migrate)
 
-	am := &avoid.ActionMessage{
-		Connection: Avoid.ctionMessage_LIGHTHOUSE,
-		Action:     &avoid.ActionMessage_MIGRATE,
-		Uuid:       uuid,
+	ar := req.Migrate
+	if ar.Action == nil {
+		errMsg := fmt.Sprintf("Migrate missing action: %v", req)
+		log.Errorf("%s", errMsg)
+		return nil, fmt.Errorf("%s", errMsg)
 	}
+	ar.Action.Uuid = uuid
+	ar.Action.Version = 0
 
-	err = sendToPending(am)
+	//TODO: sanity check identifier, values, Action
+
+	err = sendToPending(ar)
 	if err != nil {
 		return nil, err
 	}
 
 	// timeout 10 seconds
 	// wait to see if pending task is picked up
-
 	// wait until we see the action being finished
-	err = waitForAction(am)
+	msg, err = waitForAction(ar, 10)
+	if err != nil {
+		return nil, err
+	}
 
-	return &avoid.MigrateReply{Migrate: msg.Stats}, nil
+	if msg == nil {
+		errMsg := "Action returned an empty message"
+		log.Errorf("%s", errMsg)
+		return nil, fmt.Errorf("%s", errMsg)
+	}
+
+	return &avoid.MigrateReply{Migrate: msg}, nil
 }
 
 func (s *AvoidManager) Disconnect(ctx context.Context, req *avoid.DisconnectRequest) (*avoid.DisconnectReply, error) {
@@ -142,10 +207,6 @@ func (s *AvoidManager) HealthCheck(ctx context.Context, req *avoid.HealthRequest
 	log.Infof("HC\n")
 
 	return &avoid.HealthReply{Json: "TODO"}, nil
-}
-
-func sendToPending(*avoid.ActionMessage) error {
-
 }
 
 func main() {
@@ -200,6 +261,12 @@ func main() {
 	}
 
 	stor.SetConfig(*etcdCfg)
+
+	err := avoid.EnsureEtcd(&etcd)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Trace("connected to etcd")
 
 	grpcTunnelServer := grpc.NewServer()
 	avoid.RegisterTunnelServer(grpcTunnelServer, tunnel.NewTunnelServer())

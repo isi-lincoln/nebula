@@ -14,6 +14,26 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// ServiceConfig encapsulates information for communicating with services.
+type ServiceConfig struct {
+	Address string
+	Port    int
+	TLS     *stor.TLSConfig
+}
+
+type AlertConfig struct {
+	Address  string
+	Port     int
+	Username string
+	Password string
+	Type     string
+}
+
+// Endpoint returns the endpoint string of a service config.
+func (s *ServiceConfig) Endpoint() string {
+	return fmt.Sprintf("%s:%d", s.Address, s.Port)
+}
+
 // TODO: Make this all atomics
 type Avoid struct {
 	client   atomic.Bool

@@ -5,19 +5,29 @@ package avoid.messages;
 option go_package = "github.com/slackhq/nebula/avoid";
 
 message ConnectionInfo {
-  string name = 1;
-  string ran = 2;
-  string path = 3;
-  string endpoint = 4;
-  string network = 5;
-  string relay = 6;
-  string user = 7;
-  int64 duration = 8;
-  int64 lastseen = 9;
-  int64 download = 10;
-  int64 upload = 11;
-  bool error = 12;
-  string errMsg = 13;
+  string uuid = 1;
+  int64 version = 2;
+  string name = 3;
+  string ran = 4;
+  string path = 5;
+  string endpoint = 6;
+  string network = 7;
+  string relay = 8;
+  string user = 9;
+  int64 duration = 10;
+  int64 lastseen = 11;
+  int64 download = 12;
+  int64 upload = 13;
+  bool error = 14;
+  string errMsg = 15;
+}
+
+message ActionRequest {
+  string identifier = 1;
+  avoid.messages.ActionMessage Action = 2;
+  repeated string values = 3;
+  string token = 4; // used for client
+  int64 version = 5;
 }
 
 message ActionMessage {
@@ -43,9 +53,4 @@ message ActionMessage {
   Action action = 2;
   string uuid = 3;
   int64 version = 4;
-}
-
-message ActionResponse {
-    string value = 1;
-    string error = 2;
 }

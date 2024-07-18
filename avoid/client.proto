@@ -10,8 +10,8 @@ service AvoidClient {
   // client
   rpc Register (RegisterRequest) returns (RegisterReply) {}
   rpc TokenReplace (ReplaceRequest) returns (ReplaceReply) {}
-  rpc HealthCheck (HealthRequest) returns (HealthReply) {}
-  rpc Action(ActionRequest) returns (ActionReply) {}
+  rpc HealthCheck (HealthRequest) returns (avoid.messages.ConnectionInfo) {}
+  rpc Action(avoid.messages.ActionRequest) returns (avoid.messages.ConnectionInfo) {}
 }
 
 message ReplaceRequest {
@@ -26,6 +26,10 @@ message ReplaceReply {
 
 message RegisterRequest {
   string req = 1;
+  string ip = 2;
+  string cert = 3;
+  string dns = 4;
+  int64 port = 5;
 }
 
 message RegisterReply {
@@ -34,18 +38,4 @@ message RegisterReply {
 
 message HealthRequest {
   string token = 1;
-}
-
-message HealthReply {
-  avoid.messages.ConnectionInfo info = 1;
-}
-
-message ActionRequest{
-  string name = 1;
-  string token = 2;
-  avoid.messages.ActionMessage action = 3;
-}
-
-message ActionReply{
-  avoid.messages.ActionResponse reply = 1;
 }

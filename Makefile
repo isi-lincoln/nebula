@@ -120,8 +120,9 @@ bin: | proto
 	go build $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./nebula${NEBULA_CMD_SUFFIX} ${NEBULA_CMD_PATH}
 	go build $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./nebula-cert${NEBULA_CMD_SUFFIX} ./cmd/nebula-cert
 	go build -C ./avoid/cli $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-cli
-	go build -C ./avoid/service $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-service 
-	go build -C ./avoid/tunnel $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-tunnel
+	go build -C ./avoid/services/manager $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-service 
+	go build -C ./avoid/services/client $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-tunnel
+	go build -C ./avoid/services/actioneer $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-tunnel
 
 install:
 	go install $(BUILD_ARGS) -ldflags "$(LDFLAGS)" ${NEBULA_CMD_PATH}
@@ -227,7 +228,18 @@ endif
 avoid-service: | avoid/avoid_grpc.pb.go
 	GOOS=$(firstword $(subst -, , $*)) \
 	GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
-	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/service
+	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/services/manager
+
+avoid-actioneer:
+	GOOS=$(firstword $(subst -, , $*)) \
+	GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
+	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/services/actioneer
+
+avoid-client: | avoid/avoid_grpc.pb.go
+	GOOS=$(firstword $(subst -, , $*)) \
+	GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
+	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/services/client
+
 
 avoid-cli: | avoid/avoid_grpc.pb.go
 	GOOS=$(firstword $(subst -, , $*)) \

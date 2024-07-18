@@ -5,7 +5,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
-	"github.com/slackhq/nebula/avoid/service/tunnel"
 	"github.com/slackhq/nebula/config"
 	"google.golang.org/grpc"
 )
@@ -22,7 +21,7 @@ func startTunnel(l *logrus.Logger, addr string) {
 	grpcTunnelServer := grpc.NewServer()
 	avoid.RegisterTunnelServer(
 		grpcTunnelServer,
-		tunnel.NewTunnelServer(),
+		avoid.NewTunnelServer(),
 	)
 	grpcTunnelServer.Serve(tunAddr)
 }
