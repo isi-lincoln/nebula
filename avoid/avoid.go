@@ -1,6 +1,7 @@
 package avoid
 
 import (
+	"crypto/tls"
 	"fmt"
 	"sync/atomic"
 
@@ -12,6 +13,13 @@ import (
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"gopkg.in/yaml.v2"
+)
+
+var (
+	DefaultAvoidManagerPort = 55554
+	DefaultAvoidRelayPort   = 55555
+	DefaultAvoidClientPort  = 55556
+	DefaultAvoidConfigPath  = "/etc/avoid/avoid.conf"
 )
 
 // ServiceConfig encapsulates information for communicating with services.
@@ -43,6 +51,8 @@ type Avoid struct {
 	primary  *Endpoint
 	backups  []*Endpoint
 	l        *log.Logger
+	cert     string
+	key      string
 }
 
 const (
@@ -83,6 +93,14 @@ func (av *Avoid) GetManager() bool {
 
 func (av *Avoid) GetIdentity() string {
 	return av.identity
+}
+
+func (av *Avoid) GetCertificate() string {
+	return av.cert
+}
+
+func (av *Avoid) GetKey() string {
+	return av.key
 }
 
 func (av *Avoid) reload(c *config.C, initial bool) {
@@ -162,34 +180,75 @@ func (av *Avoid) reload(c *config.C, initial bool) {
 	}
 }
 
-func WithAvoidManager(endpoint string, tlsCfg *stor.TLSConfig, f func(AvoidManagerClient) error) error {
-	var conn *grpc.ClientConn
-	var err error
-
+func tlsHelper(tlsCfg *stor.TLSConfig) (credentials.TransportCredentials, error) {
 	if tlsCfg == nil {
-		log.Trace("TLS disabled")
-		conn, err = grpc.NewClient(endpoint, grpc.WithInsecure())
-		if err != nil {
-			return fmt.Errorf("failed to connect to avoid service: %v", err)
-		}
+		log.Debug("TLS disabled")
+		return nil, nil
 	} else {
-		log.Trace("TLS enabled")
+		log.Debug("TLS enabled")
 
 		log.WithFields(log.Fields{
 			"cacert": tlsCfg.Cacert,
 			"cert":   tlsCfg.Cert,
 			"key":    tlsCfg.Key,
-		}).Trace("TLS config")
+		}).Debug("TLS config")
 
-		creds, err := credentials.NewClientTLSFromFile(tlsCfg.Cacert, "")
-		if err != nil {
-			return fmt.Errorf("failed to load credentials: %v", err)
+		if tlsCfg.Cacert != "" {
+			creds, err := credentials.NewClientTLSFromFile(tlsCfg.Cacert, "")
+			if err != nil {
+				return nil, fmt.Errorf("failed to load cacert for credentials: %v", err)
+			}
+			return creds, err
+		}
+		if tlsCfg.Key != "" && tlsCfg.Cert != "" {
+			cert, err := tls.LoadX509KeyPair(tlsCfg.Cert, tlsCfg.Key)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load key pair for credentials: %v", err)
+			}
+			// TODO: https://pkg.go.dev/crypto/tls#ClientAuthType
+			config := &tls.Config{Certificates: []tls.Certificate{cert}, ClientAuth: tls.NoClientCert}
+			return credentials.NewTLS(config), nil
 		}
 
+		return nil, nil
+	}
+
+}
+
+func WithAvoidRelay(endpoint string, tlsCfg *stor.TLSConfig, f func(AvoidRelayClient) error) error {
+	var conn *grpc.ClientConn
+	creds, err := tlsHelper(tlsCfg)
+	if err != nil {
+		return err
+	}
+	if creds != nil {
 		conn, err = grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
 		if err != nil {
-			return fmt.Errorf("failed to connect to avoid service: %v", err)
+			return fmt.Errorf("failed to connect to avoid relay service: %v", err)
 		}
+	} else {
+		conn, err = grpc.NewClient(endpoint, grpc.WithInsecure())
+	}
+
+	client := NewAvoidRelayClient(conn)
+	defer conn.Close()
+
+	return f(client)
+}
+
+func WithAvoidManager(endpoint string, tlsCfg *stor.TLSConfig, f func(AvoidManagerClient) error) error {
+	var conn *grpc.ClientConn
+	creds, err := tlsHelper(tlsCfg)
+	if err != nil {
+		return err
+	}
+	if creds != nil {
+		conn, err = grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
+		if err != nil {
+			return fmt.Errorf("failed to connect to avoid manager service: %v", err)
+		}
+	} else {
+		conn, err = grpc.NewClient(endpoint, grpc.WithInsecure())
 	}
 
 	client := NewAvoidManagerClient(conn)
@@ -198,35 +257,19 @@ func WithAvoidManager(endpoint string, tlsCfg *stor.TLSConfig, f func(AvoidManag
 	return f(client)
 }
 
-// TODO: DRY
 func WithAvoidClient(endpoint string, tlsCfg *stor.TLSConfig, f func(AvoidClientClient) error) error {
 	var conn *grpc.ClientConn
-	var err error
-
-	if tlsCfg == nil {
-		log.Trace("TLS disabled")
-		conn, err = grpc.NewClient(endpoint, grpc.WithInsecure())
-		if err != nil {
-			return fmt.Errorf("failed to connect to avoid service: %v", err)
-		}
-	} else {
-		log.Trace("TLS enabled")
-
-		log.WithFields(log.Fields{
-			"cacert": tlsCfg.Cacert,
-			"cert":   tlsCfg.Cert,
-			"key":    tlsCfg.Key,
-		}).Trace("TLS config")
-
-		creds, err := credentials.NewClientTLSFromFile(tlsCfg.Cacert, "")
-		if err != nil {
-			return fmt.Errorf("failed to load credentials: %v", err)
-		}
-
+	creds, err := tlsHelper(tlsCfg)
+	if err != nil {
+		return err
+	}
+	if creds != nil {
 		conn, err = grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
 		if err != nil {
-			return fmt.Errorf("failed to connect to avoid service: %v", err)
+			return fmt.Errorf("failed to connect to avoid client service: %v", err)
 		}
+	} else {
+		conn, err = grpc.NewClient(endpoint, grpc.WithInsecure())
 	}
 
 	client := NewAvoidClientClient(conn)
@@ -262,6 +305,20 @@ type ServicesConfig struct {
 // Endpoint returns the endpoint string of a service config.
 func (ep *Endpoint) ToAddr() string {
 	return fmt.Sprintf("%s:%d", ep.Address, ep.Port)
+}
+
+func (ep *Endpoint) GetKey() string {
+	if ep.TLS != nil {
+		return ep.TLS.Key
+	}
+	return ""
+}
+
+func (ep *Endpoint) GetCert() string {
+	if ep.TLS != nil {
+		return ep.TLS.Cert
+	}
+	return ""
 }
 
 func LoadConfig(configPath string) (*ServicesConfig, error) {

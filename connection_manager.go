@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
+	//"io"
 	"sync"
 	"time"
 	"net"
@@ -152,13 +152,13 @@ func (n *connectionManager) AddTrafficWatch(localIndex uint32) {
 
 // Lincoln: TODO
 // Add features to register - our we registering an ip? a name? a certificate?
-func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries []*avoid.Endpoint, ident string) *avoid.Endpoint {
+func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries []*avoid.Endpoint, ident string) (*avoid.Endpoint, error) {
 
 	// addr shouldnt be null as we check before calling register
 	addr := primary.ToAddr()
 
 	// todo: send in tls info
-	err := avoid.WithAvoid(addr, func(c avoid.TunnelClient) error {
+	err := avoid.WithAvoidClient(addr, nil, func(c avoid.AvoidClientClient) error {
 		req := &avoid.RegisterRequest{
 			Req: ident,
 		}
@@ -181,7 +181,7 @@ func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries [
 	})
 
 	if err == nil {
-		return primary
+		return primary, nil
 	}
 
 	for _, ep := range secondaries {
@@ -189,7 +189,7 @@ func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries [
 		addr := ep.ToAddr()
 
 		// todo: send in tls info
-		err := avoid.WithAvoid(addr, func(c avoid.TunnelClient) error {
+		err := avoid.WithAvoidClient(addr, nil, func(c avoid.AvoidClientClient) error {
 			req := &avoid.RegisterRequest{}
 			n.l.Debugf("sent register request\n")
 			resp, err := c.Register(context.TODO(), req)
@@ -210,11 +210,11 @@ func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries [
 		})
 
 		if err == nil {
-			return ep
+			return ep, nil
 		}
 	}
 
-	return nil
+	return nil, err 
 }
 
 // we assume that avoid will be sending us an ip address
@@ -245,6 +245,8 @@ func (n *connectionManager) killConnection(target string) error {
 	return nil
 }
 
+
+/*
 func (n *connectionManager) watchAvoid(ep *avoid.Endpoint, ctx context.Context) {
 	// TODO here to ensure we have a token
 	// Token should also be auth'd and all that
@@ -260,7 +262,7 @@ func (n *connectionManager) watchAvoid(ep *avoid.Endpoint, ctx context.Context) 
 	addr := ep.ToAddr()
 
 	for {
-		avoid.WithAvoid(addr, func(c avoid.TunnelClient) error {
+		avoid.WithAvoidClient(addr, func(c avoid.AvoidClientClient) error {
 
 			stream, err := c.Watch(context.Background())
 			if err != nil {
@@ -346,6 +348,7 @@ func (n *connectionManager) watchAvoid(ep *avoid.Endpoint, ctx context.Context) 
 		})
 	}
 }
+*/
 
 func (n *connectionManager) Start(ctx context.Context) {
 	go n.Run(ctx)
@@ -378,12 +381,24 @@ func (n *connectionManager) Start(ctx context.Context) {
 					n.l.Infof("have ip: %s", n.intf.myVpnIp.String())
 
 					if client {
-						ep := n.registerAvoid(primary, backups, identity)
-						if ep == nil {
-							n.l.Fatalf("Unable to register with any endpoints\n")
+						// register server
+						go func(){
+							err := checkIfStartAvoidClient(n.l, n.avoidConf)
+							if err != nil {
+								n.l.Errorf("avoid service has crashed: %v\n", err)
+							}
+						}()
+
+						ep, err := n.registerAvoid(primary, backups, identity)
+						if err != nil {
+							n.l.Errorf("Error registering avoid UE: %v\n", err)
 						}
-						n.watchAvoid(ep, ctx)
+						if ep == nil {
+							n.l.Errorf("Unable to register with any endpoints\n")
+						}
+
 					}
+					n.l.Errorf("Retrying...\n")
 					time.Sleep(1 * time.Second)
 				}
 			}()

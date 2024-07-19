@@ -1,41 +1,13 @@
-syntax = "proto3";
-
 package avoid.client;
 
 import "avoid/messages.proto";
 
 option go_package = "github.com/slackhq/nebula/avoid";
 
+// From Actioneer or Handler TO UE
+// The assumption is this service is specific to UE endpoints and incorporates
+// the actions required to be taken by the avoid service.
 service AvoidClient {
-  // client
-  rpc Register (RegisterRequest) returns (RegisterReply) {}
-  rpc TokenReplace (ReplaceRequest) returns (ReplaceReply) {}
-  rpc HealthCheck (HealthRequest) returns (avoid.messages.ConnectionInfo) {}
   rpc Action(avoid.messages.ActionRequest) returns (avoid.messages.ConnectionInfo) {}
-}
-
-message ReplaceRequest {
-  string req = 1;
-  string token = 2;
-}
-
-message ReplaceReply {
-  string token = 1;
-  string resp = 2;
-}
-
-message RegisterRequest {
-  string req = 1;
-  string ip = 2;
-  string cert = 3;
-  string dns = 4;
-  int64 port = 5;
-}
-
-message RegisterReply {
-  string token = 1;
-}
-
-message HealthRequest {
-  string token = 1;
+  rpc HealthCheck (avoid.messages.HealthRequest) returns (avoid.messages.HealthReply) {}
 }

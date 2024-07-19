@@ -120,9 +120,10 @@ bin: | proto
 	go build $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./nebula${NEBULA_CMD_SUFFIX} ${NEBULA_CMD_PATH}
 	go build $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./nebula-cert${NEBULA_CMD_SUFFIX} ./cmd/nebula-cert
 	go build -C ./avoid/cli $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-cli
-	go build -C ./avoid/services/manager $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-service 
-	go build -C ./avoid/services/client $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-tunnel
-	go build -C ./avoid/services/actioneer $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-tunnel
+	go build -C ./avoid/services/manager $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-manager
+	go build -C ./avoid/services/client $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-client
+	go build -C ./avoid/services/relay $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-relay
+	go build -C ./avoid/services/actioneer $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-actioneer
 
 install:
 	go install $(BUILD_ARGS) -ldflags "$(LDFLAGS)" ${NEBULA_CMD_PATH}
@@ -193,7 +194,7 @@ bench-cpu-long:
 	go test -bench=. -benchtime=60s -cpuprofile=cpu.pprof
 	go tool pprof go-audit.test cpu.pprof
 
-proto: nebula.pb.go cert/cert.pb.go avoid/client_grpc.pb.go avoid/manager_grpc.pb.go
+proto: nebula.pb.go cert/cert.pb.go avoid/client_grpc.pb.go avoid/manager_grpc.pb.go avoid/relay_grpc.pb.go
 
 #go build github.com/gogo/protobuf/protoc-gen-gogofaster
 #PATH="$(CURDIR):$(PATH)" protoc --gogofaster_out=paths=source_relative:. $<
@@ -210,6 +211,11 @@ avoid/client_grpc.pb.go: avoid/client.proto .FORCE
 	--go-grpc_out=. --go-grpc_opt=paths=source_relative  \
 	avoid/messages.proto $<
 
+avoid/relay_grpc.pb.go: avoid/relay.proto .FORCE
+	protoc -I=. --go_out=. --go_opt=paths=source_relative \
+	--go-grpc_out=. --go-grpc_opt=paths=source_relative  \
+	avoid/messages.proto $< 
+
 avoid/manager_grpc.pb.go: avoid/manager.proto .FORCE
 	protoc -I=. --go_out=. --go_opt=paths=source_relative \
 	--go-grpc_out=. --go-grpc_opt=paths=source_relative  \
@@ -225,7 +231,7 @@ ifeq ($(words $(MAKECMDGOALS)),1)
 	@$(MAKE) service ${.DEFAULT_GOAL} --no-print-directory
 endif
 
-avoid-service: | avoid/avoid_grpc.pb.go
+avoid-manager: | avoid/avoid_grpc.pb.go
 	GOOS=$(firstword $(subst -, , $*)) \
 	GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
 	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/services/manager
@@ -240,6 +246,10 @@ avoid-client: | avoid/avoid_grpc.pb.go
 	GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
 	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/services/client
 
+avoid-relay: | avoid/avoid_grpc.pb.go
+	GOOS=$(firstword $(subst -, , $*)) \
+	GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
+	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/services/relay
 
 avoid-cli: | avoid/avoid_grpc.pb.go
 	GOOS=$(firstword $(subst -, , $*)) \

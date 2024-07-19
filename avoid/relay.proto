@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package avoid.client;
+
+import "avoid/messages.proto";
+
+option go_package = "github.com/slackhq/nebula/avoid";
+
+// From Client to Relay
+// This service will run on lighthouse/relays or other public infrastructure of avoid.
+// It must have access to the etcd cluster.
+// It should also be specified in the UE config.
+
+service AvoidRelay {
+  rpc Register (RegisterRequest) returns (RegisterReply) {}
+  rpc HealthCheck (avoid.messages.HealthRequest) returns (avoid.messages.HealthReply) {}
+}
+
+message RegisterRequest {
+  string name = 1; // self identified name
+  string ip = 2; // ip of the client
+  int64 port = 3; // port of the client service
+  string cert = 4; // certificate of the client service
+  string dns = 5; // dns name instead of ip // TODO if this matters
+}
+
+message RegisterReply {
+  string token = 1;
+}

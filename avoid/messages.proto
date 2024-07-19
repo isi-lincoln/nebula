@@ -54,3 +54,6 @@ message ActionMessage {
   string uuid = 3;
   int64 version = 4;
 }
+
+message HealthRequest {}
+message HealthReply {}
