@@ -119,7 +119,7 @@ bin-boringcrypto: build/linux-$(shell go env GOARCH)-boringcrypto/nebula build/l
 bin: | proto
 	go build $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./nebula${NEBULA_CMD_SUFFIX} ${NEBULA_CMD_PATH}
 	go build $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./nebula-cert${NEBULA_CMD_SUFFIX} ./cmd/nebula-cert
-	go build -C ./avoid/cli $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-cli
+	go build -C ./avoid/cli/manager $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-manager-cli
 	go build -C ./avoid/services/manager $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-manager
 	go build -C ./avoid/services/client $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-client
 	go build -C ./avoid/services/relay $(BUILD_ARGS) -ldflags "$(LDFLAGS)" -o ./avoid-relay
@@ -254,7 +254,7 @@ avoid-relay: | avoid/avoid_grpc.pb.go
 avoid-cli: | avoid/avoid_grpc.pb.go
 	GOOS=$(firstword $(subst -, , $*)) \
 	GOARCH=$(word 2, $(subst -, ,$*)) $(GOENV) \
-	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/cli
+	go build $(BUILD_ARGS) -o $@ -ldflags "$(LDFLAGS)" ./avoid/cli/manager
 
 bin-docker: bin build/linux-amd64/nebula build/linux-amd64/nebula-cert
 
@@ -281,4 +281,4 @@ smoke-vagrant/%: bin-docker build/%/nebula
 .DEFAULT_GOAL := bin
 
 clean:
-	rm -f avoid/service/avoid-service avoid/tunnel/avoid-tunnel avoid/cli/avoid-cli
+	rm -f avoid/service/avoid-service avoid/tunnel/avoid-tunnel avoid/cli/manager/avoid-cli

@@ -7,7 +7,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
 )
 
 var (
@@ -96,13 +95,17 @@ func main() {
 }
 
 func DisconnectUEFunc(name, value string) {
-	req := &avoid.DisconnectRequest{
-		Name:       name,
-		Disconnect: &avoid.ConnectionReply{Value: value},
+	req := &avoid.ActionRequest{
+		Identifier: name,
+		Action: &avoid.ActionMessage{
+			Connection: avoid.ActionMessage_RELAY,
+			Action:     avoid.ActionMessage_DISCONNECT,
+		},
 	}
 
 	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
-	withAvoid(addr, func(c avoid.TunnelClient) error {
+	// TODO: tls in WithAvoidManager
+	avoid.WithAvoidManager(addr, nil, func(c avoid.AvoidManagerClient) error {
 		log.Debugf("sending disconnect request: %v\n", req)
 		_, err := c.Disconnect(context.TODO(), req)
 		if err != nil {
@@ -116,70 +119,76 @@ func DisconnectUEFunc(name, value string) {
 }
 
 func MigrateUEFunc(name, typeMigrate, value string) {
-	req := &avoid.MigrateRequest{
-		Name:    name,
-		Migrate: &avoid.ConnectionReply{Value: value},
+	req := &avoid.ActionRequest{
+		Identifier: name,
+		Action: &avoid.ActionMessage{
+			Connection: avoid.ActionMessage_RELAY,
+			Action:     avoid.ActionMessage_MIGRATE,
+		},
 	}
 	log.Infof("type: %s", typeMigrate)
 	switch typeMigrate {
 	case "lighthouse":
-		req.Migrate.Connection = avoid.ConnectionReply_Lighthouse
+		req.Action.Connection = avoid.ActionMessage_LIGHTHOUSE
 		break
 	case "endpoint":
-		req.Migrate.Connection = avoid.ConnectionReply_Endpoint
+		req.Action.Connection = avoid.ActionMessage_ENDPOINT
 		break
 	case "radio":
-		req.Migrate.Connection = avoid.ConnectionReply_Radio
+		req.Action.Connection = avoid.ActionMessage_RADIO
 		break
 	case "network":
-		req.Migrate.Connection = avoid.ConnectionReply_Network
+		req.Action.Connection = avoid.ActionMessage_NETWORK
 		break
 	case "relay":
-		req.Migrate.Connection = avoid.ConnectionReply_Relay
+		req.Action.Connection = avoid.ActionMessage_RELAY
 		break
 	default:
 		log.Errorf("unknown migration type: %s\n", typeMigrate)
 		return
 	}
 
+	// TODO: tls in WithAvoidManager
 	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
-	withAvoid(addr, func(c avoid.TunnelClient) error {
-		log.Debugf("sending migrate request: %v\n", req)
+	avoid.WithAvoidManager(addr, nil, func(c avoid.AvoidManagerClient) error {
+		log.Debugf("sending disconnect request: %v\n", req)
 		resp, err := c.Migrate(context.TODO(), req)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("Message Received with response: %s\n", resp)
+		fmt.Printf("Migrate Message Sent: %v\n", resp)
 
 		return nil
 	})
 }
 
 func GetStatsFunc(ue string) {
+	req := &avoid.StatsRequest{Name: ue}
+
 	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
-	withAvoid(addr, func(c avoid.TunnelClient) error {
-		req := &avoid.StatsRequest{Name: ue}
+	// TODO: tls in WithAvoidManager
+	avoid.WithAvoidManager(addr, nil, func(c avoid.AvoidManagerClient) error {
 		log.Debugf("sent request: %v\n", req)
 		resp, err := c.GetStats(context.TODO(), req)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("Statistics:\n")
-		for k, v := range resp.Stats {
-			fmt.Printf("\t%v: %s\n", k, v)
-		}
+		// TODO: nicify
+		fmt.Printf("Statistics: %v\n", resp)
 
 		return nil
 	})
 }
 
 func ListConnectionsFunc() {
+	req := &avoid.ListRequest{}
+
 	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
-	withAvoid(addr, func(c avoid.TunnelClient) error {
-		req := &avoid.ListRequest{}
-		log.Debugf("sent list request\n")
+	// TODO: tls in WithAvoidManager
+	avoid.WithAvoidManager(addr, nil, func(c avoid.AvoidManagerClient) error {
+		log.Debugf("sent request: %v\n", req)
 		resp, err := c.ListConnections(context.TODO(), req)
 		if err != nil {
 			log.Fatal(err)
@@ -193,16 +202,4 @@ func ListConnectionsFunc() {
 
 		return nil
 	})
-}
-
-func withAvoid(endpoint string, f func(avoid.TunnelClient) error) error {
-	conn, err := grpc.Dial(endpoint, grpc.WithInsecure())
-	if err != nil {
-		return fmt.Errorf("failed to connect to avoid service: %v", err)
-	}
-
-	client := avoid.NewTunnelClient(conn)
-	defer conn.Close()
-
-	return f(client)
 }

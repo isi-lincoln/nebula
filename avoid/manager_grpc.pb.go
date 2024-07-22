@@ -21,8 +21,8 @@ const _ = grpc.SupportPackageIsVersion8
 const (
 	AvoidManager_ListConnections_FullMethodName = "/avoid.manager.AvoidManager/ListConnections"
 	AvoidManager_GetStats_FullMethodName        = "/avoid.manager.AvoidManager/GetStats"
-	AvoidManager_Migrate_FullMethodName         = "/avoid.manager.AvoidManager/Migrate"
 	AvoidManager_Disconnect_FullMethodName      = "/avoid.manager.AvoidManager/Disconnect"
+	AvoidManager_Migrate_FullMethodName         = "/avoid.manager.AvoidManager/Migrate"
 )
 
 // AvoidManagerClient is the client API for AvoidManager service.
@@ -30,9 +30,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AvoidManagerClient interface {
 	ListConnections(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListReply, error)
-	GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsReply, error)
-	Migrate(ctx context.Context, in *MigrateRequest, opts ...grpc.CallOption) (*MigrateReply, error)
-	Disconnect(ctx context.Context, in *DisconnectRequest, opts ...grpc.CallOption) (*DisconnectReply, error)
+	GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*ConnectionInfo, error)
+	Disconnect(ctx context.Context, in *ActionRequest, opts ...grpc.CallOption) (*ConnectionInfo, error)
+	Migrate(ctx context.Context, in *ActionRequest, opts ...grpc.CallOption) (*ConnectionInfo, error)
 }
 
 type avoidManagerClient struct {
@@ -53,9 +53,9 @@ func (c *avoidManagerClient) ListConnections(ctx context.Context, in *ListReques
 	return out, nil
 }
 
-func (c *avoidManagerClient) GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsReply, error) {
+func (c *avoidManagerClient) GetStats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*ConnectionInfo, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(StatsReply)
+	out := new(ConnectionInfo)
 	err := c.cc.Invoke(ctx, AvoidManager_GetStats_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -63,20 +63,20 @@ func (c *avoidManagerClient) GetStats(ctx context.Context, in *StatsRequest, opt
 	return out, nil
 }
 
-func (c *avoidManagerClient) Migrate(ctx context.Context, in *MigrateRequest, opts ...grpc.CallOption) (*MigrateReply, error) {
+func (c *avoidManagerClient) Disconnect(ctx context.Context, in *ActionRequest, opts ...grpc.CallOption) (*ConnectionInfo, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(MigrateReply)
-	err := c.cc.Invoke(ctx, AvoidManager_Migrate_FullMethodName, in, out, cOpts...)
+	out := new(ConnectionInfo)
+	err := c.cc.Invoke(ctx, AvoidManager_Disconnect_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *avoidManagerClient) Disconnect(ctx context.Context, in *DisconnectRequest, opts ...grpc.CallOption) (*DisconnectReply, error) {
+func (c *avoidManagerClient) Migrate(ctx context.Context, in *ActionRequest, opts ...grpc.CallOption) (*ConnectionInfo, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DisconnectReply)
-	err := c.cc.Invoke(ctx, AvoidManager_Disconnect_FullMethodName, in, out, cOpts...)
+	out := new(ConnectionInfo)
+	err := c.cc.Invoke(ctx, AvoidManager_Migrate_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -88,9 +88,9 @@ func (c *avoidManagerClient) Disconnect(ctx context.Context, in *DisconnectReque
 // for forward compatibility
 type AvoidManagerServer interface {
 	ListConnections(context.Context, *ListRequest) (*ListReply, error)
-	GetStats(context.Context, *StatsRequest) (*StatsReply, error)
-	Migrate(context.Context, *MigrateRequest) (*MigrateReply, error)
-	Disconnect(context.Context, *DisconnectRequest) (*DisconnectReply, error)
+	GetStats(context.Context, *StatsRequest) (*ConnectionInfo, error)
+	Disconnect(context.Context, *ActionRequest) (*ConnectionInfo, error)
+	Migrate(context.Context, *ActionRequest) (*ConnectionInfo, error)
 	mustEmbedUnimplementedAvoidManagerServer()
 }
 
@@ -101,14 +101,14 @@ type UnimplementedAvoidManagerServer struct {
 func (UnimplementedAvoidManagerServer) ListConnections(context.Context, *ListRequest) (*ListReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListConnections not implemented")
 }
-func (UnimplementedAvoidManagerServer) GetStats(context.Context, *StatsRequest) (*StatsReply, error) {
+func (UnimplementedAvoidManagerServer) GetStats(context.Context, *StatsRequest) (*ConnectionInfo, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetStats not implemented")
 }
-func (UnimplementedAvoidManagerServer) Migrate(context.Context, *MigrateRequest) (*MigrateReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Migrate not implemented")
-}
-func (UnimplementedAvoidManagerServer) Disconnect(context.Context, *DisconnectRequest) (*DisconnectReply, error) {
+func (UnimplementedAvoidManagerServer) Disconnect(context.Context, *ActionRequest) (*ConnectionInfo, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Disconnect not implemented")
+}
+func (UnimplementedAvoidManagerServer) Migrate(context.Context, *ActionRequest) (*ConnectionInfo, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Migrate not implemented")
 }
 func (UnimplementedAvoidManagerServer) mustEmbedUnimplementedAvoidManagerServer() {}
 
@@ -159,26 +159,8 @@ func _AvoidManager_GetStats_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AvoidManager_Migrate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MigrateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AvoidManagerServer).Migrate(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AvoidManager_Migrate_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AvoidManagerServer).Migrate(ctx, req.(*MigrateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _AvoidManager_Disconnect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DisconnectRequest)
+	in := new(ActionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -190,7 +172,25 @@ func _AvoidManager_Disconnect_Handler(srv interface{}, ctx context.Context, dec 
 		FullMethod: AvoidManager_Disconnect_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AvoidManagerServer).Disconnect(ctx, req.(*DisconnectRequest))
+		return srv.(AvoidManagerServer).Disconnect(ctx, req.(*ActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AvoidManager_Migrate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AvoidManagerServer).Migrate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AvoidManager_Migrate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AvoidManagerServer).Migrate(ctx, req.(*ActionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -211,12 +211,12 @@ var AvoidManager_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AvoidManager_GetStats_Handler,
 		},
 		{
-			MethodName: "Migrate",
-			Handler:    _AvoidManager_Migrate_Handler,
-		},
-		{
 			MethodName: "Disconnect",
 			Handler:    _AvoidManager_Disconnect_Handler,
+		},
+		{
+			MethodName: "Migrate",
+			Handler:    _AvoidManager_Migrate_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

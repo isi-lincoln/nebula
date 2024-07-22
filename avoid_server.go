@@ -1,6 +1,7 @@
 package nebula
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 
@@ -34,6 +35,21 @@ func checkConfigForCerts(c *config.C) (bool, string, string, error) {
 
 type UEClient struct {
 	avoid.UnimplementedAvoidClientServer
+	log *logrus.Logger
+}
+
+func (s *UEClient) Action(ctx context.Context, req *avoid.ActionRequest) (*avoid.ConnectionInfo, error) {
+	if req == nil {
+		return nil, avoid.Error("invalid action request")
+	}
+
+	s.log.WithFields(logrus.Fields{"request": req}).Infof("Action Request")
+	return &avoid.ConnectionInfo{}, nil
+}
+
+func (s *UEClient) HealthCheck(ctx context.Context, req *avoid.HealthRequest) (*avoid.HealthReply, error) {
+	s.log.Infof("liveness check\n")
+	return &avoid.HealthReply{}, nil
 }
 
 func startAvoidClient(l *logrus.Logger, addr, cert, key string) error {
@@ -62,7 +78,7 @@ func startAvoidClient(l *logrus.Logger, addr, cert, key string) error {
 
 	avoid.RegisterAvoidClientServer(
 		grpcAvoidClientServer,
-		UEClient{},
+		&UEClient{log: l},
 	)
 	grpcAvoidClientServer.Serve(tunAddr)
 

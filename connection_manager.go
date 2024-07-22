@@ -152,16 +152,20 @@ func (n *connectionManager) AddTrafficWatch(localIndex uint32) {
 
 // Lincoln: TODO
 // Add features to register - our we registering an ip? a name? a certificate?
-func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries []*avoid.Endpoint, ident string) (*avoid.Endpoint, error) {
+func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries []*avoid.Endpoint, ident string,  ourIP string, ourPort int) (*avoid.Endpoint, error) {
 
 	// addr shouldnt be null as we check before calling register
 	addr := primary.ToAddr()
 
+
+	req := &avoid.RegisterRequest{
+		Name: ident,
+		Ip: ourIP,
+		Port: int64(ourPort),
+	}
+
 	// todo: send in tls info
-	err := avoid.WithAvoidClient(addr, nil, func(c avoid.AvoidClientClient) error {
-		req := &avoid.RegisterRequest{
-			Req: ident,
-		}
+	err := avoid.WithAvoidRelay(addr, nil, func(c avoid.AvoidRelayClient) error {
 		n.l.Debugf("sent register request\n")
 		resp, err := c.Register(context.TODO(), req)
 		if err != nil {
@@ -189,7 +193,7 @@ func (n *connectionManager) registerAvoid(primary *avoid.Endpoint, secondaries [
 		addr := ep.ToAddr()
 
 		// todo: send in tls info
-		err := avoid.WithAvoidClient(addr, nil, func(c avoid.AvoidClientClient) error {
+		err := avoid.WithAvoidRelay(addr, nil, func(c avoid.AvoidRelayClient) error {
 			req := &avoid.RegisterRequest{}
 			n.l.Debugf("sent register request\n")
 			resp, err := c.Register(context.TODO(), req)
@@ -353,6 +357,70 @@ func (n *connectionManager) watchAvoid(ep *avoid.Endpoint, ctx context.Context) 
 func (n *connectionManager) Start(ctx context.Context) {
 	go n.Run(ctx)
 
+	n.l.Debugf("Lincoln - starting our code block")
+
+	/*
+	// just doing this so we can get our index
+	// we need the index to get the hostmap to get the vpnip
+	// so we can register the avoid client service ip
+	// TODO: this may not work? I have no idea how traffic timer works
+	clockSource := time.NewTicker(500 * time.Millisecond)
+	defer clockSource.Stop()
+
+	li := 0
+	found := false
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case now := <-clockSource.C:
+			n.trafficTimer.Advance(now)
+			for {
+				localIndex, has := n.trafficTimer.Purge()
+				if !has {
+					break
+				}
+				localIndex = li
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+
+	// now that we have a localIndex, lets get our hostinfo
+	n.hostMap.RLock()
+	defer n.hostMap.RUnlock()
+
+	hostinfo := n.hostMap.Indexes[li]
+	if hostinfo == nil {
+		n.l.WithField("localIndex", localIndex).Debugf("Not found in hostmap")
+		delete(n.pendingDeletion, localIndex)
+		return doNothing, nil, nil
+	}
+	ourIP := hostinfo.vpnIp
+	// clear the lock manually, defer returns error but not checked and okay
+	n.hostMap.RUnlock()
+	*/
+	ourIP := ""
+	if n.intf != nil {
+		//if n.intf.myVpnIp != nil {
+			ourIP = n.intf.myVpnIp.String()
+		//}
+	}
+
+	n.l.Debugf("Lincoln - have our ue ip: %v", ourIP)
+	// TODO: Check if we need to check that the interface is ready
+	if ourIP == "" {
+		n.l.Fatalf("our ip was not set correctly\n")
+	}
+
+	// TODO: configurable through config file
+	ourPort := avoid.DefaultAvoidClientPort
+
 	if n.avoidConf != nil {
 		if n.avoidConf.GetClient() {
 			go func() {
@@ -389,7 +457,7 @@ func (n *connectionManager) Start(ctx context.Context) {
 							}
 						}()
 
-						ep, err := n.registerAvoid(primary, backups, identity)
+						ep, err := n.registerAvoid(primary, backups, identity, ourIP, ourPort)
 						if err != nil {
 							n.l.Errorf("Error registering avoid UE: %v\n", err)
 						}
