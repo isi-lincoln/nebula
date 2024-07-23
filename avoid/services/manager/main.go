@@ -13,8 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
-	"github.com/slackhq/nebula/avoid/service/tunnel"
 	"gitlab.com/mergetb/tech/stor"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 )
 
@@ -23,19 +23,12 @@ var (
 	etcd  *clientv3.Client
 )
 
-type ClientState struct {
-	Current    int
-	Transition int
-	Action     *avoid.ConnectionReply
-}
-
 type AvoidManager struct {
 	avoid.UnimplementedAvoidManagerServer
-	updates map[string]*ClientState
 }
 
 func NewAvoidManager() *AvoidManager {
-	return &AvoidManager{updates: make(map[string]*ClientState)}
+	return &AvoidManager{}
 }
 
 func (s *AvoidManager) ListConnections(ctx context.Context, req *avoid.ListRequest) (*avoid.ListReply, error) {
@@ -47,32 +40,24 @@ func (s *AvoidManager) ListConnections(ctx context.Context, req *avoid.ListReque
 
 	log.Infof("List Request")
 
-	lr := make([]*avoid.ConnectionInfo, 0)
-	for k, _ := range s.updates {
-		tmp := &avoid.ConnectionInfo{
-			Name: k,
-		}
-		lr = append(lr, tmp)
-	}
-
 	// TODO: More data from the connection
 
-	return &avoid.ListReply{Info: lr}, nil
+	return &avoid.ListReply{}, nil
 }
 
-func (s *AvoidManager) GetStats(ctx context.Context, req *avoid.StatsRequest) (*avoid.StatsReply, error) {
+func (s *AvoidManager) GetStats(ctx context.Context, req *avoid.StatsRequest) (*avoid.ConnectionInfo, error) {
 	if req == nil {
 		errMsg := fmt.Sprintf("Invalid Request: GetStats")
 		log.Errorf("%s", errMsg)
 		return nil, fmt.Errorf("%s", errMsg)
 	}
 
-	uuid := uuid.New()
+	//uuid := uuid.New()
 	log.Infof("Get Stats: %s", req.Name)
 
 	// TODO: Return Stats
 
-	return &avoid.StatsReply{}, nil
+	return &avoid.ConnectionInfo{}, nil
 }
 
 func sendToPending(ar *avoid.ActionRequest) error {
@@ -85,7 +70,8 @@ func sendToPending(ar *avoid.ActionRequest) error {
 	// TODO: retry loop, make better to handle backoff, etc.
 	for i := 0; i < 10; i++ {
 		// write objects as all or nothing
-		err = stor.WriteObjects(am, pending)
+		objs := []stor.Object{ar, pending}
+		err = stor.WriteObjects(objs, true)
 		if err != nil {
 			log.Warnf("%d: Retrying Write to Pending: %v", i, err)
 			continue
@@ -98,10 +84,9 @@ func sendToPending(ar *avoid.ActionRequest) error {
 
 func waitForAction(ar *avoid.ActionRequest, timeout int) (*avoid.ConnectionInfo, error) {
 	key := fmt.Sprintf("%s/%s", avoid.ConnPrefix, ar.Uuid)
-	ctx, cancel := context.WithTimeout(context.TODO(), timeout*time.Second)
+	ctx, cancel := context.WithTimeout(context.TODO(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	avoid.EnsureEtcd(*etcd)
 	rch := (*etcd).Watch(ctx, key, clientv3.WithPrefix())
 
 	// we've found a key if rch != nil
@@ -124,31 +109,31 @@ func waitForAction(ar *avoid.ActionRequest, timeout int) (*avoid.ConnectionInfo,
 	return nil, nil
 }
 
-func (s *AvoidManager) Migrate(ctx context.Context, req *avoid.MigrateRequest) (*avoid.MigrateReply, error) {
+func (s *AvoidManager) Action(ctx context.Context, req *avoid.ActionRequest) (*avoid.ConnectionInfo, error) {
 	if req == nil {
 		errMsg := fmt.Sprintf("Invalid Request: Migrate")
 		log.Errorf("%s", errMsg)
 		return nil, fmt.Errorf("%s", errMsg)
 	}
-	if req.Migrate == nil {
-		errMsg := fmt.Sprintf("Invalid Migrate: %v", req)
-		log.Errorf("%s", errMsg)
-		return nil, fmt.Errorf("%s", errMsg)
-	}
 
-	uuid := uuid.New()
-	log.Infof("Migrate: %s: %v", uuid.String(), req.Migrate)
+	uuidTracker := uuid.New()
+	log.Infof("Action: %s: %v", uuidTracker.String(), req)
 
-	ar := req.Migrate
+	ar := req
 	if ar.Action == nil {
 		errMsg := fmt.Sprintf("Migrate missing action: %v", req)
 		log.Errorf("%s", errMsg)
 		return nil, fmt.Errorf("%s", errMsg)
 	}
-	ar.Action.Uuid = uuid
+	ar.Action.Uuid = uuidTracker.String()
 	ar.Action.Version = 0
 
 	//TODO: sanity check identifier, values, Action
+
+	err := avoid.EnsureEtcd(&etcd)
+	if err != nil {
+		return nil, err
+	}
 
 	err = sendToPending(ar)
 	if err != nil {
@@ -158,7 +143,7 @@ func (s *AvoidManager) Migrate(ctx context.Context, req *avoid.MigrateRequest) (
 	// timeout 10 seconds
 	// wait to see if pending task is picked up
 	// wait until we see the action being finished
-	msg, err = waitForAction(ar, 10)
+	msg, err := waitForAction(ar, 10)
 	if err != nil {
 		return nil, err
 	}
@@ -169,53 +154,17 @@ func (s *AvoidManager) Migrate(ctx context.Context, req *avoid.MigrateRequest) (
 		return nil, fmt.Errorf("%s", errMsg)
 	}
 
-	return &avoid.MigrateReply{Migrate: msg}, nil
-}
-
-func (s *AvoidManager) Disconnect(ctx context.Context, req *avoid.DisconnectRequest) (*avoid.DisconnectReply, error) {
-	if req == nil {
-		errMsg := fmt.Sprintf("Invalid Request: Disconnect")
-		log.Errorf("%s", errMsg)
-		return nil, fmt.Errorf("%s", errMsg)
-	}
-
-	uuid := uuid.New()
-	log.Infof("Disconnect: %s: %v", uuid.String(), req)
-
-	return &avoid.DisconnectReply{}, nil
-}
-
-func (s *AvoidManager) Register(ctx context.Context, req *avoid.RegisterRequest) (*avoid.RegisterReply, error) {
-	if req == nil {
-		errMsg := fmt.Sprintf("Invalid Request: Register")
-		log.Errorf("%s", errMsg)
-		return nil, fmt.Errorf("%s", errMsg)
-	}
-
-	log.Infof("Register request: %v\n", req)
-
-	return &avoid.RegisterReply{Token: req.Req}, nil
-}
-
-func (s *AvoidManager) HealthCheck(ctx context.Context, req *avoid.HealthRequest) (*avoid.HealthReply, error) {
-	if req == nil {
-		errMsg := fmt.Sprintf("Invalid Request: Health")
-		log.Errorf("%s", errMsg)
-		return nil, fmt.Errorf("%s", errMsg)
-	}
-
-	log.Infof("HC\n")
-
-	return &avoid.HealthReply{Json: "TODO"}, nil
+	return &avoid.ConnectionInfo{}, nil
 }
 
 func main() {
 	printVersion := flag.Bool("version", false, "Print version")
 	printUsage := flag.Bool("help", false, "Print command line usage")
 
-	tunnelPort := flag.Int("tunport", 55554, "port to configure tunnel server")
-	tunnelServer := flag.String("tunserver", "0.0.0.0", "tunnel server address or interface")
+	mgmtPort := flag.Int("port", avoid.DefaultAvoidManagerPort, "management server port")
+	mgmtServer := flag.String("addr", "0.0.0.0", "mgmt server address or interface")
 
+	avoidConf := flag.String("conf", avoid.DefaultAvoidConfigPath, "avoid configuration file path")
 	debug := flag.Bool("debug", false, "enable extra debugging")
 
 	flag.Parse()
@@ -237,40 +186,37 @@ func main() {
 		log.SetLevel(logrus.InfoLevel)
 	}
 
-	log.Infof("starting avoid tunnel api: %s:%d", *tunnelServer, *tunnelPort)
+	log.Infof("starting avoid manager api: %s:%d", *mgmtServer, *mgmtPort)
 
-	tunAddr, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *tunnelServer, *tunnelPort))
+	mgmtAddr, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *mgmtServer, *mgmtPort))
 	if err != nil {
-		log.Fatalf("failed to listen on tunnel addr: %v", err)
+		log.Fatalf("failed to listen on mgmt addr: %v", err)
 	}
 
-	cfg, err := config.LoadConfig(EtcdConfigPath)
-	if err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	// read in environment variables for container
-	err = config.ReadENVSettings(cfg)
+	cfg, err := avoid.LoadConfig(*avoidConf)
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	etcdCfg, err := config.SetEtcdSettings(cfg)
+	etcdCfg, err := avoid.GetEtcdConfig(cfg)
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	stor.SetConfig(*etcdCfg)
+	err = avoid.SetConfig(etcdCfg)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
 
-	err := avoid.EnsureEtcd(&etcd)
+	err = avoid.EnsureEtcd(&etcd)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Trace("connected to etcd")
+	log.Debug("connected to etcd")
 
 	grpcTunnelServer := grpc.NewServer()
-	avoid.RegisterTunnelServer(grpcTunnelServer, tunnel.NewTunnelServer())
-	grpcTunnelServer.Serve(tunAddr)
+	avoid.RegisterAvoidManagerServer(grpcTunnelServer, NewAvoidManager())
+	grpcTunnelServer.Serve(mgmtAddr)
 
 	os.Exit(0)
 }

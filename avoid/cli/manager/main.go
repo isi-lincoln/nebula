@@ -37,18 +37,6 @@ func main() {
 	}
 	root.AddCommand(get)
 
-	migrate := &cobra.Command{
-		Use:   "migrate",
-		Short: "tell a UE time to move on",
-	}
-	root.AddCommand(migrate)
-
-	disconnect := &cobra.Command{
-		Use:   "disconnect",
-		Short: "disconnect UE from network",
-	}
-	root.AddCommand(disconnect)
-
 	ListConnInfo := &cobra.Command{
 		Use:   "conn",
 		Short: "list connections associated with this endpoint",
@@ -69,62 +57,66 @@ func main() {
 	}
 	get.AddCommand(GetStatsUE)
 
-	MigrateUE := &cobra.Command{
+	action := &cobra.Command{
+		Use:   "action",
+		Short: "tell a UE to do something",
+	}
+	root.AddCommand(action)
+
+	migrate := &cobra.Command{
+		Use:   "migrate",
+		Short: "move the UE to another thing",
+	}
+	action.AddCommand(migrate)
+
+	disconnect := &cobra.Command{
+		Use:   "disconnect",
+		Short: "disconnect UE from thing",
+	}
+	action.AddCommand(disconnect)
+
+	migrateUE := &cobra.Command{
 		Use:   "ue <id> <lighthouse|endpoint|radio|network|relay> <value>",
 		Short: "move the UE to another thing",
 		Long:  "tell the UE through nebula tunnel that it needs to change values",
 		Args:  cobra.ExactArgs(3),
 		Run: func(cmd *cobra.Command, args []string) {
-			MigrateUEFunc(args[0], args[1], args[2])
+			ActionUEFunc(args[0], args[1], args[2], avoid.ActionMessage_MIGRATE)
 		},
 	}
-	migrate.AddCommand(MigrateUE)
+	migrate.AddCommand(migrateUE)
 
-	DisconnectUE := &cobra.Command{
-		Use:   "ue <uuid> <endpoint>",
-		Short: "disconnect UE from avoid",
-		Long:  "tell the UE through nebula tunnel to disconnect",
+	disconnectUE := &cobra.Command{
+		Use:   "ue <id> <lighthouse|endpoint|radio|network|relay>",
+		Short: "move the UE to another thing",
+		Long:  "tell the UE through nebula tunnel that it needs to change values",
 		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			DisconnectUEFunc(args[0], args[1])
+			ActionUEFunc(args[0], args[1], "", avoid.ActionMessage_DISCONNECT)
 		},
 	}
-	disconnect.AddCommand(DisconnectUE)
+	migrate.AddCommand(disconnectUE)
 
 	root.Execute()
 }
 
-func DisconnectUEFunc(name, value string) {
-	req := &avoid.ActionRequest{
-		Identifier: name,
-		Action: &avoid.ActionMessage{
-			Connection: avoid.ActionMessage_RELAY,
-			Action:     avoid.ActionMessage_DISCONNECT,
-		},
+func ActionUEFunc(name, typeMigrate, value string, am avoid.ActionMessage_Action) {
+
+	// TODO parse value and sanitize
+	var valueList []string
+	if value != "" {
+		valueList = []string{value}
+	} else {
+		valueList = nil
 	}
 
-	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
-	// TODO: tls in WithAvoidManager
-	avoid.WithAvoidManager(addr, nil, func(c avoid.AvoidManagerClient) error {
-		log.Debugf("sending disconnect request: %v\n", req)
-		_, err := c.Disconnect(context.TODO(), req)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		fmt.Printf("Disconnect Message Sent\n")
-
-		return nil
-	})
-}
-
-func MigrateUEFunc(name, typeMigrate, value string) {
 	req := &avoid.ActionRequest{
 		Identifier: name,
 		Action: &avoid.ActionMessage{
 			Connection: avoid.ActionMessage_RELAY,
-			Action:     avoid.ActionMessage_MIGRATE,
+			Action:     am,
 		},
+		Values: valueList,
 	}
 	log.Infof("type: %s", typeMigrate)
 	switch typeMigrate {
@@ -152,7 +144,7 @@ func MigrateUEFunc(name, typeMigrate, value string) {
 	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
 	avoid.WithAvoidManager(addr, nil, func(c avoid.AvoidManagerClient) error {
 		log.Debugf("sending disconnect request: %v\n", req)
-		resp, err := c.Migrate(context.TODO(), req)
+		resp, err := c.Action(context.TODO(), req)
 		if err != nil {
 			log.Fatal(err)
 		}

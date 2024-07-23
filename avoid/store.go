@@ -14,14 +14,15 @@ import (
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	log "github.com/sirupsen/logrus"
+	"gitlab.com/mergetb/tech/stor"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 )
 
 var (
-	etcdConfig     *ServiceConfig
 	MaxMessageSize = 1024 * 1024 * 4
+	etcdConfig     *EtcdConfig
 )
 
 const (
@@ -54,17 +55,17 @@ func (e *ObjectError) ToError() error {
 	return fmt.Errorf("%d: %s", e.Code, e.Message)
 }
 
-// Object defines an interface for cogs datastore objects.
-type Object interface {
-	Key() string
-	GetVersion() int64
-	SetVersion(int64)
-	Value() interface{}
+func ReadStandard(obj stor.Object) error {
+	err := Read(obj)
+	if err != nil {
+		return err.ToError()
+	}
+	return nil
 }
 
 // Read reads an object from the datastore
-func Read(obj Object) *ObjectError {
-	n, err := ReadObjects([]Object{obj})
+func Read(obj stor.Object) *ObjectError {
+	n, err := ReadObjects([]stor.Object{obj})
 	if err != nil {
 		return err
 	}
@@ -77,7 +78,7 @@ func Read(obj Object) *ObjectError {
 
 // ReadNew reads an object form the datastore, and does not throw an error if
 // the object is not found.
-func ReadNew(obj Object) error {
+func ReadNew(obj stor.Object) error {
 
 	eo := Read(obj)
 	if eo != nil && eo.Code != ErrNotFound {
@@ -96,7 +97,7 @@ type ReadTimer struct {
 // ReadWait attempts to read an object repeatedly until a timeout threshold is
 // reached defined by timer. If timer is nil the defaults of 30 seconds with a
 // retry period of 250 milliseconds is applied
-func ReadWait(obj Object, timer *ReadTimer) error {
+func ReadWait(obj stor.Object, timer *ReadTimer) error {
 
 	if timer == nil {
 		timer = &ReadTimer{
@@ -121,7 +122,7 @@ func ReadWait(obj Object, timer *ReadTimer) error {
 // ReadWaitObjects is readwait for many objects
 // we check that the number of reads is equal to the number
 // of objects (which is what ErrNotFound was doing anyway
-func ReadWaitObjects(objs []Object, timer *ReadTimer) error {
+func ReadWaitObjects(objs []stor.Object, timer *ReadTimer) error {
 	if timer == nil {
 		timer = &ReadTimer{
 			Period:  250 * time.Millisecond,
@@ -146,7 +147,7 @@ func ReadWaitObjects(objs []Object, timer *ReadTimer) error {
 
 // FromJSON reads reads on object from byte array encoded json. If the object is
 // a protobuf, then protobuf is used instead.
-func FromJSON(o Object, b []byte) {
+func FromJSON(o stor.Object, b []byte) {
 
 	// if this is a protobuf, unmarshal as such
 	msg, ok := o.Value().(proto.Message)
@@ -169,10 +170,10 @@ func FromJSON(o Object, b []byte) {
 
 // ReadObjects reads a set of objects from the datastore in a one-shot
 // transaction.
-func ReadObjects(objs []Object) (int, *ObjectError) {
+func ReadObjects(objs []stor.Object) (int, *ObjectError) {
 
 	var ops []clientv3.Op
-	omap := make(map[string]Object)
+	omap := make(map[string]stor.Object)
 
 	names := make([]string, 0)
 	for _, o := range objs {
@@ -232,7 +233,7 @@ func ReadObjects(objs []Object) (int, *ObjectError) {
 
 // ToJSON marshals an object to JSON form. If the object is a protobuf, protobuf
 // is used instead.
-func ToJSON(o Object) string {
+func ToJSON(o stor.Object) string {
 
 	// if this is a protobuf, marshal as such
 	msg, ok := o.Value().(proto.Message)
@@ -256,14 +257,14 @@ func ToJSON(o Object) string {
 }
 
 // Write persists an object to the datastore.
-func Write(obj Object, opts ...clientv3.OpOption) error {
-	return WriteObjects([]Object{obj}, false, opts...).ToError()
+func Write(obj stor.Object, opts ...clientv3.OpOption) error {
+	return WriteObjects([]stor.Object{obj}, false, opts...).ToError()
 }
 
 // WriteObjects writes objects to the datastore in a single shot transaction. If
 // fresh is true, then all objects must be the most recent version, or the write
 // will fail.
-func WriteObjects(objs []Object, fresh bool, opts ...clientv3.OpOption) *ObjectError {
+func WriteObjects(objs []stor.Object, fresh bool, opts ...clientv3.OpOption) *ObjectError {
 
 	var ops []clientv3.Op
 	var ifs []clientv3.Cmp
@@ -321,12 +322,12 @@ func WriteObjects(objs []Object, fresh bool, opts ...clientv3.OpOption) *ObjectE
 }
 
 // Touch update the key, but not value in data store
-func Touch(obj Object) error {
-	return TouchObjects([]Object{obj})
+func Touch(obj stor.Object) error {
+	return TouchObjects([]stor.Object{obj})
 }
 
 // TouchObjects updates multiple keys
-func TouchObjects(objs []Object) error {
+func TouchObjects(objs []stor.Object) error {
 
 	var ops []clientv3.Op
 	var ifs []clientv3.Cmp
@@ -373,7 +374,7 @@ func TouchObjects(objs []Object) error {
 }
 
 // DeleteObjects deletes a set of objects from the datastore.
-func DeleteObjects(objs []Object) error {
+func DeleteObjects(objs []stor.Object) error {
 
 	var ops []clientv3.Op
 
@@ -406,17 +407,17 @@ func DeleteObjects(objs []Object) error {
 }
 
 // Delete deletes an object from the datastore.
-func Delete(obj Object) error {
+func Delete(obj stor.Object) error {
 
-	return DeleteObjects([]Object{obj})
+	return DeleteObjects([]stor.Object{obj})
 
 }
 
 // ObjectTx encapsulates a set of put and delete operations into a single
 // transaction.
 type ObjectTx struct {
-	Put    []Object
-	Delete []Object
+	Put    []stor.Object
+	Delete []stor.Object
 }
 
 // RunObjectTx runs an object transaction.
@@ -479,7 +480,7 @@ func RunObjectTx(otx ObjectTx) error {
 
 // RunObjectTxPrefix a bastaradization of RunObjectTx, making it so
 // put is still object array, but delete is a prefix for the txn
-func RunObjectTxPrefix(puts []Object, deletePrefix string) error {
+func RunObjectTxPrefix(puts []stor.Object, deletePrefix string) error {
 
 	if deletePrefix == "" {
 		return fmt.Errorf("attempted to txn delete db")
@@ -536,7 +537,7 @@ func RunObjectTxPrefix(puts []Object, deletePrefix string) error {
 }
 
 // ReadRevision reads an object, and returns the clientv3 key revision for that object
-func ReadRevision(obj Object) (revision int64, err error) {
+func ReadRevision(obj stor.Object) (revision int64, err error) {
 	objsize := 0
 	revision = 0
 	err = WithEtcd(func(c *clientv3.Client) error {
@@ -569,11 +570,11 @@ func ReadRevision(obj Object) (revision int64, err error) {
 
 // RUC performs a read-update-commit on the provided object using the specified
 // update function.
-func RUC(o Object, update func(o Object)) error {
+func RUC(o stor.Object, update func(o stor.Object)) error {
 	for i := 0; i < rucRetry; i++ {
 		update(o)
 
-		eo := WriteObjects([]Object{o}, true)
+		eo := WriteObjects([]stor.Object{o}, true)
 		if eo == nil {
 			return nil
 		}
@@ -593,12 +594,24 @@ func RUC(o Object, update func(o Object)) error {
 	return eo.ToError()
 }
 
-// SetEtcdConfig sets the global etcd configuration settings
-func SetEtcdConfig(cfg *ServiceConfig) {
+// GetEtcdConfig sets the global etcd configuration settings
+func GetEtcdConfig(cfg *ServicesConfig) (*EtcdConfig, error) {
 	if cfg == nil {
-		log.Fatal("etcd service config cannot be nil")
+		return nil, fmt.Errorf("Service configuration is undefined")
+	}
+	if cfg.Etcd == nil {
+		return nil, fmt.Errorf("etcd service not found in config with key: etcd")
+	}
+	return cfg.Etcd, nil
+}
+
+func SetConfig(cfg *EtcdConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("attempt to load etcd configuration is nil")
 	}
 	etcdConfig = cfg
+
+	return nil
 }
 
 // EtcdConnect Try to get a etcd client- assumption EtcdClient is async until used

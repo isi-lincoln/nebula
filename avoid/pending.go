@@ -17,20 +17,21 @@ var (
 
 // TODO: TOTP
 type Registration struct {
-	UE         string
-	EP         string
-	Token      string
-	IP         string
-	DNS        string
-	Certficate string
-	Port       int
-	Version    int64
+	UE          string
+	EP          string
+	Token       string
+	IP          string
+	DNS         string
+	Certificate string
+	Port        int64
+	Version     int64
 }
 
 func (x *Registration) Key() string {
 	return fmt.Sprintf("%s/%s/%s", RegistrationPrefix, x.UE)
 }
 func (x *Registration) SetVersion(v int64) { x.Version = v }
+func (x *Registration) GetVersion() int64  { return x.Version }
 func (x *Registration) Value() interface{} { return x }
 
 type Pending struct {
@@ -44,6 +45,7 @@ func (x *Pending) Key() string {
 	return fmt.Sprintf("%s/%s", PendingPrefix, x.ActionKey)
 }
 func (x *Pending) SetVersion(v int64) { x.Version = v }
+func (x *Pending) GetVersion() int64  { return x.Version }
 func (x *Pending) Value() interface{} { return x }
 
 // TODO: guard rails before calling Key()

@@ -7,12 +7,9 @@ import (
 	"net"
 	"os"
 
-	"github.com/coreos/etcd/clientv3"
-	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
-	"github.com/slackhq/nebula/avoid/service/tunnel"
-	"gitlab.com/mergetb/tech/stor"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 )
 
@@ -36,7 +33,7 @@ func (s *AvoidClient) Action(ctx context.Context, req *avoid.ActionRequest) (*av
 		return nil, fmt.Errorf("%s", errMsg)
 	}
 
-	avoid.InfoF("Action Request", log.fields{"request": req})
+	log.WithFields(log.Fields{"request": req}).Info("Action Request")
 
 	// TODO: this code is mainly for testing
 	// so implement some more functions here
@@ -54,10 +51,11 @@ func main() {
 	printVersion := flag.Bool("version", false, "Print version")
 	printUsage := flag.Bool("help", false, "Print command line usage")
 
-	clientPort := flag.Int("port", avoid.DefaultAvoidClientPort, "port to configure tunnel server")
-	clientServer := flag.String("server", "0.0.0.0", "tunnel server address or interface")
+	clientPort := flag.Int("port", avoid.DefaultAvoidClientPort, "server port")
+	clientServer := flag.String("server", "0.0.0.0", "server address")
 
 	debug := flag.Bool("debug", false, "enable extra debugging")
+	avoidConf := flag.String("conf", avoid.DefaultAvoidConfigPath, "avoid configuration file path")
 
 	flag.Parse()
 
@@ -73,9 +71,9 @@ func main() {
 
 	// daemon mode
 	if *debug {
-		log.SetLevel(logrus.DebugLevel)
+		log.SetLevel(log.DebugLevel)
 	} else {
-		log.SetLevel(logrus.InfoLevel)
+		log.SetLevel(log.InfoLevel)
 	}
 
 	log.Infof("starting avoid client api: %s:%d", *clientServer, *clientPort)
@@ -85,27 +83,30 @@ func main() {
 		log.Fatalf("failed to listen on tunnel addr: %v", err)
 	}
 
-	cfg, err := avoid.LoadConfig(EtcdConfigPath)
+	cfg, err := avoid.LoadConfig(*avoidConf)
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	etcdCfg, err := avoid.SetEtcdSettings(cfg)
+	etcdCfg, err := avoid.GetEtcdConfig(cfg)
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	stor.SetConfig(*etcdCfg)
+	err = avoid.SetConfig(etcdCfg)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
 
-	err := avoid.EnsureEtcd(&etcd)
+	err = avoid.EnsureEtcd(&etcd)
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Debug("connected to etcd")
 
-	grpcTunnelServer := grpc.NewServer()
-	avoid.RegisterAvoidClientServer(grpcAvoidClientServer, tunnel.NewAvoidClientServer())
-	grpcAvoidClientServer.Serve(tunAddr)
+	grpcAvoidClientServer := grpc.NewServer()
+	avoid.RegisterAvoidClientServer(grpcAvoidClientServer, NewAvoidClient())
+	grpcAvoidClientServer.Serve(clientAddr)
 
 	os.Exit(0)
 }

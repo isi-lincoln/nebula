@@ -23,11 +23,12 @@ message ConnectionInfo {
 }
 
 message ActionRequest {
-  string identifier = 1;
+  string identifier = 1; // endpoint identifier
   avoid.messages.ActionMessage Action = 2;
   repeated string values = 3;
   string token = 4; // used for client
-  int64 version = 5;
+  int64 version = 5; // for versioning updates
+  string uuid = 6; // for tracking requests
 }
 
 message ActionMessage {

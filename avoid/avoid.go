@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"io/ioutil"
 
@@ -295,11 +296,19 @@ type ClientServiceConfig struct {
 type ManagerServiceConfig struct {
 	EP *Endpoint `yaml:ep",omitempty"`
 }
+type EtcdConfig struct {
+	Address string
+	Port    int
+	TLS     *stor.TLSConfig
+	Quantum time.Duration
+	Timeout time.Duration
+}
 
 // ServicesConfig encapsulates information for communicating with services.
 type ServicesConfig struct {
 	Client  *ClientServiceConfig  `yaml:client",omitempty"`
 	Manager *ManagerServiceConfig `yaml:manager",omitempty"`
+	Etcd    *EtcdConfig           `yaml:etcd",omitempty"`
 }
 
 // Endpoint returns the endpoint string of a service config.

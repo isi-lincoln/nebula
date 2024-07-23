@@ -7,12 +7,12 @@ import (
 	"net"
 	"os"
 
-	"github.com/coreos/etcd/clientv3"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
-	"github.com/slackhq/nebula/avoid/service/relay"
 	"gitlab.com/mergetb/tech/stor"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 )
 
@@ -48,7 +48,7 @@ func (s *AvoidRelay) Register(ctx context.Context, req *avoid.RegisterRequest) (
 	// get our host name to put in as the EP
 	hostname, err := os.Hostname()
 	if err != nil {
-		return -1, err
+		return nil, err
 	}
 
 	// TODO: validate that name should be in avoid network
@@ -57,7 +57,7 @@ func (s *AvoidRelay) Register(ctx context.Context, req *avoid.RegisterRequest) (
 	// TODO: use TOTP/HOTP, or another method - as this just means you listen
 	// to Register requests to find tokens - even encrypted no bueno
 
-	token := uuid.Must(uuid.NewV4()).String()
+	token := uuid.New().String()
 
 	reg := &avoid.Registration{
 		UE:          req.Name,
@@ -72,17 +72,17 @@ func (s *AvoidRelay) Register(ctx context.Context, req *avoid.RegisterRequest) (
 	fields := log.Fields{"registration": reg}
 
 	// now we need to store the registration object to be used later
-	err = stor.WriteObjects(am, reg)
+	err = stor.WriteObjects([]stor.Object{reg}, true)
 	if err != nil {
 		return nil, err
 	}
 
-	avoid.InfoF("Registration Complete", fields)
+	log.WithFields(fields).Infof("Registration Complete")
 
 	return &avoid.RegisterReply{Token: token}, nil
 }
 
-func (s *AvoidClient) HealthCheck(ctx context.Context, req *avoid.HealthRequest) (*avoid.HealthReply, error) {
+func (s *AvoidRelay) HealthCheck(ctx context.Context, req *avoid.HealthRequest) (*avoid.HealthReply, error) {
 	log.Debugf("liveness check\n")
 	return &avoid.HealthReply{}, nil
 }
@@ -122,27 +122,30 @@ func main() {
 		log.Fatalf("failed to listen on relay addr: %v", err)
 	}
 
-	cfg, err := avoid.LoadConfig(avoidConf)
+	cfg, err := avoid.LoadConfig(*avoidConf)
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	etcdCfg, err := avoid.SetEtcdSettings(cfg)
+	etcdCfg, err := avoid.GetEtcdConfig(cfg)
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	stor.SetConfig(*etcdCfg)
+	err = avoid.SetConfig(etcdCfg)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
 
-	err := avoid.EnsureEtcd(&etcd)
+	err = avoid.EnsureEtcd(&etcd)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Debugf("connected to etcd")
+	log.Debug("connected to etcd")
 
-	grpcTunnelServer := grpc.NewServer()
-	avoid.RegisterTunnelServer(grpcTunnelServer, relay.NewAvoidRelayServer())
-	grpcTunnelServer.Serve(relayAddr)
+	grpcAvoidRelayServer := grpc.NewServer()
+	avoid.RegisterAvoidRelayServer(grpcAvoidRelayServer, NewAvoidRelay())
+	grpcAvoidRelayServer.Serve(relayAddr)
 
 	os.Exit(0)
 }

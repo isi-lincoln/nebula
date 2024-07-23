@@ -9,8 +9,7 @@ option go_package = "github.com/slackhq/nebula/avoid";
 service AvoidManager {
   rpc ListConnections (ListRequest) returns (ListReply) {}
   rpc GetStats (StatsRequest) returns (avoid.messages.ConnectionInfo) {}
-  rpc Disconnect (avoid.messages.ActionRequest) returns (avoid.messages.ConnectionInfo) {}
-  rpc Migrate (avoid.messages.ActionRequest) returns (avoid.messages.ConnectionInfo) {}
+  rpc Action (avoid.messages.ActionRequest) returns (avoid.messages.ConnectionInfo) {}
 }
 
 message ListRequest {}
