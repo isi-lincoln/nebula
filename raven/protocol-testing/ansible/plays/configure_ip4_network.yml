@@ -1,0 +1,32 @@
+- hosts: all
+  tasks:
+    - name: get all addresses
+      shell: ip -br addr | grep eth | grep -v eth0 | cut -d ' ' -f 1
+      register: num_eths
+      when: inventory_hostname in vars['config']
+
+    - debug: var=num_eths
+
+    - set_fact:
+        ifaces: "{{ num_eths.stdout_lines }}"
+
+    - name: flush interface
+      command: ip addr flush {{ item.name }}
+      with_items:
+        - "{{ vars['config'][inventory_hostname].interfaces }}"
+      become: yes
+      when: inventory_hostname in vars['config']
+
+    - name: set addr interface
+      command: ip addr add {{ item.ip }}/24 dev {{ item.name }}
+      with_items:
+        - "{{ vars['config'][inventory_hostname].interfaces }}"
+      become: yes
+      when: inventory_hostname in vars['config']
+
+    - name: set link up
+      command: ip link set up {{ item.name }}
+      with_items:
+        - "{{ vars['config'][inventory_hostname].interfaces }}"
+      become: yes
+      when: inventory_hostname in vars['config']

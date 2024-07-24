@@ -1,0 +1,33 @@
+nebula_iface_name: neb0
+nebula_network_domain: avoid-nebula
+nebula_network_fqdn: avoid-nebula.org
+overlay:
+  'r0':
+    ip: 10.10.0.100
+    netmask: 24
+  'r1':
+    ip: 10.10.0.101
+    netmask: 24
+  'lh':
+    ip: 10.10.0.1
+    netmask: 24
+  'ue':
+    ip: 10.10.0.2
+    netmask: 24
+config:
+  'r0':
+    interfaces:
+    - ip: 10.0.0.100
+      name: eth1
+  'r1':
+    interfaces:
+    - ip: 10.0.0.101
+      name: eth1
+  'lh':
+    interfaces:
+    - ip: 10.0.0.1
+      name: eth1
+  'ue':
+    interfaces:
+    - ip: 10.0.0.2
+      name: eth1

@@ -1,0 +1,39 @@
+# configure our cumulus linux host as a switch
+---
+
+- hosts: s0
+  become: yes
+  tasks:
+    - name: configure interfaces
+      copy:
+        dest: /etc/network/interfaces
+        content: |
+          source /etc/network/interfaces.d/*.intf
+
+          # The loopback network interface
+          auto lo
+          iface lo inet loopback
+
+          # The primary network interface
+          auto eth0
+          iface eth0 inet dhcp
+          vrf mgmt
+
+          auto mgmt
+          iface mgmt
+              address 127.0.0.1/8
+              address ::1/128
+              vrf-table auto
+
+          auto swp1
+          auto swp2
+          auto swp3
+          auto swp4
+
+          auto br2
+          iface br2 inet static
+          bridge-ports swp1 swp2 swp3 swp4
+
+    - name: reload interfaces
+      shell: ifreload -a
+      ignore_errors: yes
