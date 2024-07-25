@@ -30,3 +30,30 @@
         - "{{ vars['config'][inventory_hostname].interfaces }}"
       become: yes
       when: inventory_hostname in vars['config']
+
+# TODO: align with variables
+- hosts: ue
+  tasks:
+    - name: add default for ue
+      command: sudo ip route add 10.0.0.0/24 dev eth1
+      become: yes
+
+- hosts: [r0, r1]
+  tasks:
+    - name: ipv4 forwarding
+      shell: echo 1 > /proc/sys/net/ipv4/ip_forward
+      become: yes
+
+    - name: proxy arp
+      shell: echo 1 > /proc/sys/net/ipv4/conf/all/proxy_arp
+      become: yes
+
+- hosts: [lh]
+  tasks:
+    - name: add route back to ue
+      shell: ip route add {{ item }}
+      become: yes
+      loop:
+        - "10.10.0.0/24 via 10.0.0.100"
+        - "10.11.0.0/24 via 10.0.0.101"
+

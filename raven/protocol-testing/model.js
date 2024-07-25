@@ -15,13 +15,15 @@ topo = {
         v2v("r0", 1, "s0", 1, { mac: {   r0: '04:70:00:00:02:10', s0: '04:70:00:00:01:10' } }),
         v2v("r1", 1, "s0", 2, { mac: {   r1: '04:70:00:00:02:11', s0: '04:70:00:00:01:11' } }),
         v2v("lh", 1, "s0", 3, { mac:  {  lh: '04:70:00:00:02:12', s0: '04:70:00:00:01:12' } }),
-        v2v("ue", 1, "s0", 4, { mac:  {  ue: '04:70:00:00:02:13', s0: '04:70:00:00:01:13' } }),
+        v2v("r0", 2, "ue", 1, { mac: {   r0: '04:70:00:00:03:10', ue: '04:70:00:00:00:10' } }),
+        v2v("r1", 2, "ue", 2, { mac: {   r1: '04:70:00:00:03:11', ue: '04:70:00:00:00:11' } }),
     ]
 }
 
 function node(name) {
     return {
         name: name,
+	defaultnic: 'e1000',
         image: 'ubuntu-2204',
         mounts: [{ source: env.PWD+"/../..", point: "/avoid" }], 
         cpu: { cores: 2 },
@@ -32,7 +34,7 @@ function node(name) {
 function cumulus(name) {
     return {
         name: name,
-        image: 'cumulusvx-4.2',
+        image: 'cumulusvx-4.1',
         cpu: { cores: 1 },
         memory: { capacity: GB(1) },
      }
