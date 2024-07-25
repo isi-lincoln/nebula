@@ -1,0 +1,134 @@
+---
+# install avoid code but not services
+- hosts: [r0, r1, lh, ue]
+  become: true
+  tasks:
+    - name: Get the apt things we need
+      apt:
+        pkg:
+         - wget
+         - git
+         - make
+         - protobuf-compiler
+    
+    - name: Ensure /etc/avoid directory is gone
+      file:
+        path: /etc/avoid
+        state: absent
+    
+    - name: Ensure /etc/avoid directory exists
+      file:
+        path: /etc/avoid
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+    
+    - name: install avoid template
+      template:
+        src: ../templates/avoid-service.conf.j2
+        dest: /etc/avoid/avoid.conf
+        force: true
+    
+    - name: Download go tar file
+      command: wget https://go.dev/dl/go1.22.4.linux-amd64.tar.gz
+      become_user: "{{ install_user }}"
+     
+    - name: Delete previous installation
+      command: rm -rf {{ item }}
+      loop:
+        - /usr/local/go
+        - /home/{{ install_user }}/go
+     
+    - name: Extract and move new go folder to /usr/local
+      command: tar -C /usr/local -xzf go1.22.4.linux-amd64.tar.gz
+     
+    - name: Delete downloaded tar file
+      shell: rm -rf go1.22.4.linux-amd64.tar.gz*
+      become_user: "{{ install_user }}"
+     
+    - name: check for gopath
+      shell: grep -c "GOPATH" /home/{{ install_user }}/.bashrc || true
+      register: grep_gopath
+      become_user: "{{ install_user }}"
+    
+    - name: Add go binary path to ~/.bashrc
+      lineinfile:
+        path: /home/{{ install_user }}/.bashrc
+        line: 'export {{ item }}'
+        create: true
+        state: present
+      with_items:
+        - "GOPATH=/home/{{ install_user }}/go"
+        - "GOBIN=/home/{{ install_user }}/go/bin"
+        - "PATH=$PATH:/usr/local/go/bin:/home/{{ install_user }}/go/bin"
+      become_user: "{{ install_user }}"
+    
+    - name: remove repo if exists
+      command: rm -rf nebula
+      ignore_errors: yes
+      become_user: "{{ install_user }}"
+    
+    - name: Git clone our repo
+      command: git clone https://github.com/isi-lincoln/nebula.git
+      become_user: "{{ install_user }}"
+    
+    - name: checkout our branch
+      shell: git fetch -a && git checkout avoid-broken
+      become_user: "{{ install_user }}"
+      args:
+        chdir: nebula
+    
+    - name: ensure correct permissions
+      command: "{{ item }}"
+      become_user: "{{ install_user }}"
+      loop:
+        - "chown -R {{ install_user }}:{{ install_user }} nebula"
+    
+    - name: get protoc things
+      shell: go {{ item }}
+      become_user: "{{ install_user }}"
+      args:
+        chdir: nebula
+      environment:
+        GOPATH: "/home/{{ install_user }}/go"
+        GOBIN: "/home/{{ install_user }}/go/bin"
+        PATH: "/usr/local/go/bin:/home/go/bin:{{ ansible_env.PATH }}"
+      loop:
+        - get google.golang.org/protobuf/cmd/protoc-gen-go
+        - install google.golang.org/protobuf/cmd/protoc-gen-go
+        - install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+    
+    - name: build the code
+      shell: make
+      become_user: "{{ install_user }}"
+      environment:
+        GOPATH: "/home/{{ install_user }}/go"
+        GOBIN: "/home/{{ install_user }}/go/bin"
+        PATH: "/usr/local/go/bin:/home/{{ install_user }}/go/bin:{{ ansible_env.PATH }}"
+      args:
+        chdir: nebula
+    
+    - name: copy nebula binaries
+      copy:
+        remote_src: true
+        src: /home/{{install_user}}/nebula/avoid/services/{{ item }}/avoid-{{ item }}
+        dest: /etc/avoid/{{ item }}
+        force: yes
+      with_items:
+        - actioneer
+        - client
+        - manager
+        - relay
+    
+    - name: Ensure Nebula binaries permissions are correct
+      file:
+        path: "/etc/avoid/{{ item }}"
+        owner: root
+        group: root
+        mode: '0700'
+      with_items:
+        - actioneer
+        - client
+        - manager
+        - relay

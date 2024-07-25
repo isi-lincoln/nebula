@@ -1,3 +1,6 @@
 [submodule "raven/protocol-testing/ansible/roles/nebula-role"]
 	path = raven/protocol-testing/ansible/roles/nebula-role
 	url = git@github.com:isi-lincoln/nebula-role.git
+[submodule "raven/protocol-testing/ansible/roles/ansible-etcd"]
+	path = raven/protocol-testing/ansible/roles/ansible-etcd
+	url = git@github.com:isi-lincoln/ansible-etcd.git

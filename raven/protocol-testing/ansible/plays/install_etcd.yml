@@ -1,0 +1,49 @@
+---
+# install and configure etcd
+#- hosts: [lh]
+#  become: true
+#  tasks:
+#    - import_role:
+#        name: ansible-etcd
+#      vars:
+#        keygen: yes
+#        server: yes
+#        alias: "lh"
+#        address: "{{ overlay['lh'].ip }}"
+#        ip: "{{ overlay['lh'].ip }}"
+#        auth_hosts:
+#          - "lh"
+#          - "lh.{{ nebula_network_fqdn }}"
+#          - "{{ overlay['lh'].ip }}"
+#        hosts:
+#          - alias: "lh"
+#            endpoint: lh=https://{{ overlay[inventory_hostname].ip }}:2380
+#
+
+- hosts: [lh]
+  become: true
+  tasks:
+    - import_role:
+        name: ansible-etcd
+      vars:
+        local: yes
+        keygen: yes
+        server: no
+        install: no
+        alias: "{{ inventory_hostname }}"
+        address: "{{ inventory_hostname }}.{{ nebula_network_fqdn }}"
+        ip: "{{ overlay[inventory_hostname].ip }}"
+
+# TODO:
+# copy over the certs back to localhost
+
+- hosts: [lh, r0, r1]
+  become: true
+  tasks:
+    - import_role:
+        name: ansible-etcd
+      vars:
+        server: yes
+        alias: "{{ inventory_hostname }}"
+        address: "{{ inventory_hostname }}.{{ nebula_network_fqdn }}"
+        ip: "{{ overlay[inventory_hostname].ip }}"
