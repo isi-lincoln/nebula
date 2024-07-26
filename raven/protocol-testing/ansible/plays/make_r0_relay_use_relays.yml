@@ -1,0 +1,87 @@
+---
+# r0 isnt a nebula relay because i made the ansible role not
+# allow ca to be a nebula node, so this just does that
+# sets both to relays
+# then sets ue to use them as relays
+- hosts: [r0]
+  become: true
+  tasks:
+    # no idea why its in template directory
+    - name: copy over the systemd file
+      copy:
+        src: ../roles/nebula-role/templates/node.service.j2
+        dest: /etc/systemd/system/nebula.service
+    
+    - name: create a soft link
+      file:
+        src: /etc/systemd/system/nebula.service
+        dest: /etc/systemd/system/multi-user.target.wants/nebula.service
+        state: link
+    
+    - name: copy over the config file now
+      template:
+        src: ../roles/nebula-role/templates/node_config.yml.j2
+        dest: /opt/nebula/config.yml
+      vars:
+        nebula_network_name: "{{ nebula_network_domain }}"
+        nebula_fqdn: "{{ nebula_network_fqdn }}"
+        nebula_lighthouse_hostname: "lh"
+        nebula_interface_name: "{{ nebula_iface_name }}"
+        nebula_lighthouse_public_hostname: "{{ config['lh'].interfaces[0].ip }}"
+        nebula_lighthouse_internal_ip_addr: "{{ overlay['lh'].ip }}"
+        nebula_lighthouse_public_port: 4242
+        nebula_node_use_lighthouse_as_relay: false
+        nebula_metrics_prometheus_enabled: false
+        nebula_firewall_block_action: drop
+        nebula_inbound_rules:
+          - { port: "any", proto: "any", host: "any" }
+        nebula_outbound_rules:
+          - { port: "any", proto: "any", host: "any" }
+
+    - name: copy over check script
+      template:
+        src: ../roles/nebula-role/templates/nebula-check.sh.j2
+        dest: /opt/nebula/nebula-check.sh
+        mode: "0777"
+      vars:
+        nebula_lighthouse_internal_ip_addr: "{{ overlay['lh'].ip }}"
+        nebula_interface_name: "{{ nebula_iface_name }}"
+ 
+# make r0, r1 relays to ue
+- hosts: [r0, r1]
+  become: true
+  tasks:
+    - name: make r0, r1 relays for ue
+      lineinfile:
+        regexp: 'am_relay:'
+        path: /opt/nebula/config.yml
+        line: '  am_relay: true'
+
+    - name: daemon reload
+      command: systemctl daemon-reload
+
+    - name: re(start) nebula service
+      command: service nebula restart
+
+# add r0 to be a relay for ue,
+# our code (avoid) will then test the switching behaviors
+- hosts: ue
+  become: true
+  tasks:
+    - name: make ue use relays
+      lineinfile:
+        regexp: 'use_relays:'
+        path: /opt/nebula/config.yml
+        line: '  use_relays: true'
+
+    - name: change default relay to be r0
+      lineinfile:
+        regexp: '- {{ overlay["lh"].ip }}'
+        path: /opt/nebula/config.yml
+        line: '    - {{ overlay["r0"].ip }}'
+
+    - name: daemon reload
+      command: systemctl daemon-reload
+
+    - name: re(start) nebula service
+      command: service nebula restart

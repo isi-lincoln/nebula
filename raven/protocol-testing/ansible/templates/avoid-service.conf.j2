@@ -1,7 +1,7 @@
 etcd:
- address: "lh.{{ nebula_network_fqdn }}" # this will be on nebula network
+ address: "{{ overlay['lh'].ip }}" # this will be on nebula network
  port: 2379
- timeout: 3000
+ timeout: 3000000000 # 3s
  tls:
    key: /etc/etcd/db-key.pem
    cert: /etc/etcd/db.pem

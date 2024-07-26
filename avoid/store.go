@@ -16,7 +16,6 @@ import (
 
 var (
 	MaxMessageSize = 1024 * 1024 * 4
-	etcdConfig     *EtcdConfig
 )
 
 const (
