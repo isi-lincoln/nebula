@@ -178,7 +178,11 @@ func (hm *HandshakeManager) handleOutbound(vpnIp iputil.VpnIp, lighthouseTrigger
 	hh.Lock()
 	defer hh.Unlock()
 
+
 	hostinfo := hh.hostinfo
+
+	hostinfo.logger(hm.l).WithFields(logrus.Fields{"relays": hostinfo.remotes.relays, "relay enabled": hm.config.useRelays}).Info("Are we relaying?")
+
 	// If we are out of time, clean up
 	if hh.counter >= hm.config.retries {
 		hh.hostinfo.logger(hm.l).WithField("udpAddrs", hh.hostinfo.remotes.CopyAddrs(hm.mainHostMap.GetPreferredRanges())).
@@ -262,6 +266,7 @@ func (hm *HandshakeManager) handleOutbound(vpnIp iputil.VpnIp, lighthouseTrigger
 			WithField("handshake", m{"stage": 1, "style": "ix_psk0"}).
 			Debug("Handshake message sent")
 	}
+
 
 	if hm.config.useRelays && len(hostinfo.remotes.relays) > 0 {
 		hostinfo.logger(hm.l).WithField("relays", hostinfo.remotes.relays).Info("Attempt to relay through hosts")
