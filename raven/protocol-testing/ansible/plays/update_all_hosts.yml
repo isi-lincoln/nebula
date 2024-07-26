@@ -1,4 +1,4 @@
-- hosts: ['r0', 'r1', 'lh', 'ue']
+- hosts: ['r0', 'r1', 'lh', 'ue', 'dst']
   tasks:
     - name: disable apparmor
       command: systemctl disable apparmor

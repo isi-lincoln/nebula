@@ -15,6 +15,9 @@ overlay:
   'ue':
     ip: 192.168.0.2
     netmask: 24
+  'dst':
+    ip: 192.168.0.200
+    netmask: 24
 config:
   'r0':
     interfaces:
@@ -31,6 +34,10 @@ config:
   'lh':
     interfaces:
     - ip: 10.0.0.1
+      name: eth1
+  'dst':
+    interfaces:
+    - ip: 10.0.0.200
       name: eth1
   'ue':
     interfaces:

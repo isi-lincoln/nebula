@@ -1,69 +1,69 @@
 ---
 # install and configure etcd
+- hosts: [lh]
+  become: true
+  tasks:
+    - import_role:
+        name: ansible-etcd
+      vars:
+        keygen: yes
+        server: yes
+        alias: "lh"
+        address: "lh.{{ nebula_network_fqdn }}"
+        ip: "{{ overlay['lh'].ip }}"
+        auth_hosts:
+          - "lh"
+          - "lh.{{ nebula_network_fqdn }}"
+          - "{{ overlay['lh'].ip }}"
+        hosts:
+          - alias: "lh"
+            endpoint: lh=https://{{ overlay[inventory_hostname].ip }}:2380
+
+
 #- hosts: [lh]
 #  become: true
 #  tasks:
 #    - import_role:
 #        name: ansible-etcd
 #      vars:
+#        local: no
 #        keygen: yes
-#        server: yes
-#        alias: "lh"
-#        address: "{{ overlay['lh'].ip }}"
-#        ip: "{{ overlay['lh'].ip }}"
+#        server: no
+#        install: no
+#        alias: "{{ inventory_hostname }}"
+#        address: "{{ inventory_hostname }}.{{ nebula_network_fqdn }}"
+#        ip: "{{ overlay[inventory_hostname].ip }}"
 #        auth_hosts:
 #          - "lh"
 #          - "lh.{{ nebula_network_fqdn }}"
 #          - "{{ overlay['lh'].ip }}"
-#        hosts:
-#          - alias: "lh"
-#            endpoint: lh=https://{{ overlay[inventory_hostname].ip }}:2380
+#          - "r0"
+#          - "r0.{{ nebula_network_fqdn }}"
+#          - "{{ overlay['r0'].ip }}"
+#          - "r1"
+#          - "r1.{{ nebula_network_fqdn }}"
+#          - "{{ overlay['r1'].ip }}"
 #
-
-- hosts: [lh]
-  become: true
-  tasks:
-    - import_role:
-        name: ansible-etcd
-      vars:
-        local: no
-        keygen: yes
-        server: no
-        install: no
-        alias: "{{ inventory_hostname }}"
-        address: "{{ inventory_hostname }}.{{ nebula_network_fqdn }}"
-        ip: "{{ overlay[inventory_hostname].ip }}"
-        auth_hosts:
-          - "lh"
-          - "lh.{{ nebula_network_fqdn }}"
-          - "{{ overlay['lh'].ip }}"
-          - "r0"
-          - "r0.{{ nebula_network_fqdn }}"
-          - "{{ overlay['r0'].ip }}"
-          - "r1"
-          - "r1.{{ nebula_network_fqdn }}"
-          - "{{ overlay['r1'].ip }}"
-
-    - name: copy over certs
-      fetch:
-        flat: yes
-        src: /etc/etcd/{{ item }}
-        dest: "{{ item }}"
-      loop:
-        - db.pem
-        - db-key.pem
-        - ca.pem
-
-# TODO:
-# copy over the certs back to localhost
-
-- hosts: [lh]
-  become: true
-  tasks:
-    - import_role:
-        name: ansible-etcd
-      vars:
-        server: yes
-        alias: "{{ inventory_hostname }}"
-        address: "{{ inventory_hostname }}.{{ nebula_network_fqdn }}"
-        ip: "{{ overlay[inventory_hostname].ip }}"
+#    - name: copy over certs
+#      fetch:
+#        flat: yes
+#        src: /etc/etcd/{{ item }}
+#        dest: "{{ item }}"
+#      loop:
+#        - db.pem
+#        - db-key.pem
+#        - ca.pem
+#
+## TODO:
+## copy over the certs back to localhost
+#
+#- hosts: [lh]
+#  become: true
+#  tasks:
+#    - import_role:
+#        name: ansible-etcd
+#      vars:
+#        server: yes
+#        alias: "{{ inventory_hostname }}"
+#        address: "{{ inventory_hostname }}.{{ nebula_network_fqdn }}"
+#        ip: "{{ overlay[inventory_hostname].ip }}"
