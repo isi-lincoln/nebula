@@ -12,13 +12,11 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
 	"gitlab.com/mergetb/tech/stor"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 )
 
 var (
 	Build string
-	etcd  *clientv3.Client
 )
 
 type AvoidRelay struct {
@@ -136,12 +134,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
-
-	err = avoid.EnsureEtcd(&etcd)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Debug("connected to etcd")
 
 	grpcAvoidRelayServer := grpc.NewServer()
 	avoid.RegisterAvoidRelayServer(grpcAvoidRelayServer, NewAvoidRelay())

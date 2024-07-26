@@ -20,7 +20,6 @@ import (
 
 var (
 	Build string
-	etcd  *clientv3.Client
 )
 
 type AvoidManager struct {
@@ -82,31 +81,35 @@ func sendToPending(ar *avoid.ActionRequest) error {
 	return err
 }
 
-func waitForAction(ar *avoid.ActionRequest, timeout int) (*avoid.ConnectionInfo, error) {
+func waitForAction(ar *avoid.ActionRequest, timeout int) (connInfo *avoid.ConnectionInfo, err error) {
 	key := fmt.Sprintf("%s/%s", avoid.ConnPrefix, ar.Uuid)
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	rch := (*etcd).Watch(ctx, key, clientv3.WithPrefix())
+	err = stor.WithEtcd(func(etcdp *clientv3.Client) error {
+		rch := (*etcdp).Watch(ctx, key, clientv3.WithPrefix())
 
-	// we've found a key if rch != nil
-	for wresp := range rch {
-		for _, x := range wresp.Events {
-			// cleaning up key event
-			ci := &avoid.ConnectionInfo{}
-			err := json.Unmarshal(x.Kv.Value, ci)
-			if err != nil {
-				// TODO: manage this situation
-				log.Errorf("failed to unmarshal for %s: %v", key, err)
-				return nil, err
+		// we've found a key if rch != nil
+		for wresp := range rch {
+			for _, x := range wresp.Events {
+				// cleaning up key event
+				ci := &avoid.ConnectionInfo{}
+				err := json.Unmarshal(x.Kv.Value, ci)
+				if err != nil {
+					// TODO: manage this situation
+					log.Errorf("failed to unmarshal for %s: %v", key, err)
+					return err
+				}
+				connInfo = ci
+				return nil
 			}
-			return ci, nil
+
 		}
 
-	}
+		return nil
+	})
 
-	// our key was nil because we timed out
-	return nil, nil
+	return
 }
 
 func (s *AvoidManager) Action(ctx context.Context, req *avoid.ActionRequest) (*avoid.ConnectionInfo, error) {
@@ -130,12 +133,7 @@ func (s *AvoidManager) Action(ctx context.Context, req *avoid.ActionRequest) (*a
 
 	//TODO: sanity check identifier, values, Action
 
-	err := avoid.EnsureEtcd(&etcd)
-	if err != nil {
-		return nil, err
-	}
-
-	err = sendToPending(ar)
+	err := sendToPending(ar)
 	if err != nil {
 		return nil, err
 	}
@@ -207,12 +205,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
-
-	err = avoid.EnsureEtcd(&etcd)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Debug("connected to etcd")
 
 	grpcTunnelServer := grpc.NewServer()
 	avoid.RegisterAvoidManagerServer(grpcTunnelServer, NewAvoidManager())

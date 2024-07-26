@@ -19,7 +19,6 @@ import (
 
 var (
 	cfgPath string
-	etcd    *clientv3.Client
 	timeout = 5 * time.Second
 	Build   string
 )
@@ -73,62 +72,68 @@ func actionFunc() {
 	fields := log.Fields{"runner": ar}
 
 	key := fmt.Sprintf("%s", avoid.PendingPrefix)
-	rch := (*etcd).Watch(context.Background(), key, clientv3.WithPrefix())
-	log.Debugf("begin watch on key: %s", key)
-	for wresp := range rch {
-		avoid.EnsureEtcd(&etcd)
 
-		for _, x := range wresp.Events {
-			if x.Type == mvccpb.DELETE {
-				log.Debugf("delete event for key: %s", x.Kv.Key)
-				continue
-			}
-			pending := &avoid.Pending{}
-			err := json.Unmarshal(x.Kv.Value, pending)
-			if err != nil {
-				fields := log.Fields{"key": x.Kv.Key, "value": x.Kv.Value}
-				avoid.ErrorEF("unmarshalling pending failed", err, fields)
-			}
+	err = stor.WithEtcd(func(etcdp *clientv3.Client) error {
+		rch := (*etcdp).Watch(context.Background(), key, clientv3.WithPrefix())
+		log.Debugf("begin watch on key: %s", key)
+		for wresp := range rch {
 
-			// we've gotten an event, we need to handle it now.
-			err = avoid.RUC(pending, func(o stor.Object) {
-				o.(*avoid.Pending).Owner = actionID
-			})
-			// unable to get key
-			if err != nil {
-				fields["txn key"] = x.Kv.Value
-				avoid.ErrorEF("unable to read update commit pending", err, fields)
-				continue
-			}
-
-			// have key, now need to do something
-			fields["actionKey"] = pending.ActionKey
-
-			// TODO: fix this when leases are implemented
-			leaseID := 12
-
-			err = actionHandler(leaseID, actionID, pending.ActionKey)
-			if err != nil {
-				fields["actionError"] = err
-				avoid.ErrorEF("action handler failed", err, fields)
-				errCount := pending.ErrCount
-				if errCount >= 2 {
-					avoid.ErrorF("unable to resolveerrors moving to failed", fields)
-					// delete pending
-					// add fail
-					// TODO
-				} else {
-					avoid.ErrorF("incrementing failed count", fields)
-					err = avoid.RUC(pending, func(o stor.Object) {
-						o.(*avoid.Pending).Owner = ""
-						o.(*avoid.Pending).ErrCount = o.(*avoid.Pending).ErrCount + 1
-					})
+			for _, x := range wresp.Events {
+				if x.Type == mvccpb.DELETE {
+					log.Debugf("delete event for key: %s", x.Kv.Key)
+					continue
 				}
-			}
+				pending := &avoid.Pending{}
+				err := json.Unmarshal(x.Kv.Value, pending)
+				if err != nil {
+					fields := log.Fields{"key": x.Kv.Key, "value": x.Kv.Value}
+					avoid.ErrorEF("unmarshalling pending failed", err, fields)
+				}
 
-			log.WithFields(fields).Info("handled action")
+				// we've gotten an event, we need to handle it now.
+				err = avoid.RUC(pending, func(o stor.Object) {
+					o.(*avoid.Pending).Owner = actionID
+				})
+				// unable to get key
+				if err != nil {
+					fields["txn key"] = x.Kv.Value
+					avoid.ErrorEF("unable to read update commit pending", err, fields)
+					continue
+				}
+
+				// have key, now need to do something
+				fields["actionKey"] = pending.ActionKey
+
+				// TODO: fix this when leases are implemented
+				leaseID := 12
+
+				err = actionHandler(leaseID, actionID, pending.ActionKey)
+				if err != nil {
+					fields["actionError"] = err
+					avoid.ErrorEF("action handler failed", err, fields)
+					errCount := pending.ErrCount
+					if errCount >= 2 {
+						avoid.ErrorF("unable to resolveerrors moving to failed", fields)
+						// delete pending
+						// add fail
+						// TODO
+					} else {
+						avoid.ErrorF("incrementing failed count", fields)
+						err = avoid.RUC(pending, func(o stor.Object) {
+							o.(*avoid.Pending).Owner = ""
+							o.(*avoid.Pending).ErrCount = o.(*avoid.Pending).ErrCount + 1
+						})
+					}
+				}
+
+				log.WithFields(fields).Info("handled action")
+			}
 		}
-	}
+
+		return nil
+	})
+
+	log.Fatalf("action failed: %v", err)
 }
 
 func actionHandler(lease int, aid, actionKey string) error {
@@ -254,12 +259,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
-
-	err = avoid.EnsureEtcd(&etcd)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Debug("connected to etcd")
 
 	manageActions(*actioneers)
 }

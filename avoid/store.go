@@ -3,12 +3,8 @@ package avoid
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net"
 	"time"
 
 	"github.com/golang/protobuf/jsonpb"
@@ -16,8 +12,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/mergetb/tech/stor"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	grpc "google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 )
 
 var (
@@ -185,7 +179,7 @@ func ReadObjects(objs []stor.Object) (int, *ObjectError) {
 	n := 0
 	objsize := 0
 	code := 0
-	err := WithEtcd(func(c *clientv3.Client) error {
+	err := stor.WithEtcd(func(c *clientv3.Client) error {
 
 		kvc := clientv3.NewKV(c)
 		ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Minute)
@@ -294,7 +288,7 @@ func WriteObjects(objs []stor.Object, fresh bool, opts ...clientv3.OpOption) *Ob
 	log.Tracef("Write (%v) Size: %d", names, objsize)
 
 	code := 0
-	err := WithEtcd(func(c *clientv3.Client) error {
+	err := stor.WithEtcd(func(c *clientv3.Client) error {
 		kvc := clientv3.NewKV(c)
 		if kvc == nil {
 			log.Error("failed to create clientv3 client")
@@ -343,7 +337,7 @@ func TouchObjects(objs []stor.Object) error {
 	log.Tracef("Write (%v) Size: %d", names, objsize)
 
 	code := 0
-	err := WithEtcd(func(c *clientv3.Client) error {
+	err := stor.WithEtcd(func(c *clientv3.Client) error {
 
 		kvc := clientv3.NewKV(c)
 		if kvc == nil {
@@ -383,7 +377,7 @@ func DeleteObjects(objs []stor.Object) error {
 	}
 
 	code := 0
-	err := WithEtcd(func(c *clientv3.Client) error {
+	err := stor.WithEtcd(func(c *clientv3.Client) error {
 		kvc := clientv3.NewKV(c)
 		ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Minute)
 		resp, err := kvc.Txn(ctx).Then(ops...).Commit()
@@ -455,7 +449,7 @@ func RunObjectTx(otx ObjectTx) error {
 	log.Tracef("DeleteTx: (%v)", names)
 
 	code := 0
-	err := WithEtcd(func(c *clientv3.Client) error {
+	err := stor.WithEtcd(func(c *clientv3.Client) error {
 		kvc := clientv3.NewKV(c)
 		ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Minute)
 		resp, err := kvc.Txn(ctx).Then(ops...).Commit()
@@ -513,7 +507,7 @@ func RunObjectTxPrefix(puts []stor.Object, deletePrefix string) error {
 	log.Tracef("DeletePrefixTx: (%v)", deletePrefix)
 
 	code := 0
-	err := WithEtcd(func(c *clientv3.Client) error {
+	err := stor.WithEtcd(func(c *clientv3.Client) error {
 		kvc := clientv3.NewKV(c)
 		ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Minute)
 		resp, err := kvc.Txn(ctx).Then(ops...).Commit()
@@ -540,7 +534,7 @@ func RunObjectTxPrefix(puts []stor.Object, deletePrefix string) error {
 func ReadRevision(obj stor.Object) (revision int64, err error) {
 	objsize := 0
 	revision = 0
-	err = WithEtcd(func(c *clientv3.Client) error {
+	err = stor.WithEtcd(func(c *clientv3.Client) error {
 		kvc := clientv3.NewKV(c)
 		ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Minute)
 		resp, err := kvc.Get(ctx, obj.Key())
@@ -609,10 +603,21 @@ func SetConfig(cfg *EtcdConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("attempt to load etcd configuration is nil")
 	}
-	etcdConfig = cfg
+	//etcdConfig = cfg
+	scfg := stor.Config{
+		Address: cfg.Address,
+		Port:    cfg.Port,
+		TLS:     cfg.TLS,
+		Quantum: cfg.Quantum,
+		Timeout: cfg.Timeout,
+	}
+
+	stor.SetConfig(scfg)
 
 	return nil
 }
+
+/*
 
 // EtcdConnect Try to get a etcd client- assumption EtcdClient is async until used
 func EtcdConnect() (*clientv3.Client, error) {
@@ -780,3 +785,4 @@ func EtcdClient() (*clientv3.Client, error) {
 	return cli, err
 
 }
+*/

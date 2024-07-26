@@ -98,12 +98,6 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	err = avoid.EnsureEtcd(&etcd)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Debug("connected to etcd")
-
 	grpcAvoidClientServer := grpc.NewServer()
 	avoid.RegisterAvoidClientServer(grpcAvoidClientServer, NewAvoidClient())
 	grpcAvoidClientServer.Serve(clientAddr)
