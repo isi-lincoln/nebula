@@ -22,6 +22,7 @@ const (
 	DefaultHandshakeRetries       = 10
 	DefaultHandshakeTriggerBuffer = 64
 	DefaultUseRelays              = true
+	DefaultForceRelays              = false
 )
 
 var (
@@ -30,6 +31,7 @@ var (
 		retries:       DefaultHandshakeRetries,
 		triggerBuffer: DefaultHandshakeTriggerBuffer,
 		useRelays:     DefaultUseRelays,
+		forceRelays:     DefaultForceRelays,
 	}
 )
 
@@ -38,6 +40,7 @@ type HandshakeConfig struct {
 	retries       int
 	triggerBuffer int
 	useRelays     bool
+	forceRelays     bool
 
 	messageMetrics *MessageMetrics
 }
@@ -237,115 +240,209 @@ func (hm *HandshakeManager) handleOutbound(vpnIp iputil.VpnIp, lighthouseTrigger
 		hm.lightHouse.QueryServer(vpnIp)
 	}
 
-	// Send the handshake to all known ips, stage 2 takes care of assigning the hostinfo.remote based on the first to reply
-	var sentTo []*udp.Addr
-	hostinfo.remotes.ForEach(hm.mainHostMap.GetPreferredRanges(), func(addr *udp.Addr, _ bool) {
-		hm.messageMetrics.Tx(header.Handshake, header.MessageSubType(hostinfo.HandshakePacket[0][1]), 1)
-		err := hm.outside.WriteTo(hostinfo.HandshakePacket[0], addr)
-		if err != nil {
-			hostinfo.logger(hm.l).WithField("udpAddr", addr).
+
+	if hm.config.forceRelays {
+		hostinfo.logger(hm.l).Infof("Lincoln: Relay remote values: %#v\n", hostinfo.remotes)
+
+		if len(hostinfo.remotes.relays) > 0 {
+			hostinfo.logger(hm.l).WithField("relays", hostinfo.remotes.relays).Info("Attempt to relay through hosts")
+			// Send a RelayRequest to all known Relay IP's
+			for _, relay := range hostinfo.remotes.relays {
+				// Don't relay to myself, and don't relay through the host I'm trying to connect to
+				if *relay == vpnIp || *relay == hm.lightHouse.myVpnIp {
+					continue
+				}
+				relayHostInfo := hm.mainHostMap.QueryVpnIp(*relay)
+				if relayHostInfo == nil || relayHostInfo.remote == nil {
+					hostinfo.logger(hm.l).WithField("relay", relay.String()).Info("Establish tunnel to relay target")
+					hm.f.Handshake(*relay)
+					continue
+				}
+				// Check the relay HostInfo to see if we already established a relay through it
+				if existingRelay, ok := relayHostInfo.relayState.QueryRelayForByIp(vpnIp); ok {
+					switch existingRelay.State {
+					case Established:
+						hostinfo.logger(hm.l).WithField("relay", relay.String()).Info("Send handshake via relay")
+						hm.f.SendVia(relayHostInfo, existingRelay, hostinfo.HandshakePacket[0], make([]byte, 12), make([]byte, mtu), false)
+					case Requested:
+						hostinfo.logger(hm.l).WithField("relay", relay.String()).Info("Re-send CreateRelay request")
+						// Re-send the CreateRelay request, in case the previous one was lost.
+						m := NebulaControl{
+							Type:                NebulaControl_CreateRelayRequest,
+							InitiatorRelayIndex: existingRelay.LocalIndex,
+							RelayFromIp:         uint32(hm.lightHouse.myVpnIp),
+							RelayToIp:           uint32(vpnIp),
+						}
+						msg, err := m.Marshal()
+						if err != nil {
+							hostinfo.logger(hm.l).
+								WithError(err).
+								Error("Failed to marshal Control message to create relay")
+						} else {
+							// This must send over the hostinfo, not over hm.Hosts[ip]
+							hm.f.SendMessageToHostInfo(header.Control, 0, relayHostInfo, msg, make([]byte, 12), make([]byte, mtu))
+							hm.l.WithFields(logrus.Fields{
+								"relayFrom":           hm.lightHouse.myVpnIp,
+								"relayTo":             vpnIp,
+								"initiatorRelayIndex": existingRelay.LocalIndex,
+								"relay":               *relay}).
+								Info("send CreateRelayRequest")
+						}
+					default:
+						hostinfo.logger(hm.l).
+							WithField("vpnIp", vpnIp).
+							WithField("state", existingRelay.State).
+							WithField("relay", relayHostInfo.vpnIp).
+							Errorf("Relay unexpected state")
+					}
+				} else {
+					// No relays exist or requested yet.
+					if relayHostInfo.remote != nil {
+						idx, err := AddRelay(hm.l, relayHostInfo, hm.mainHostMap, vpnIp, nil, TerminalType, Requested)
+						if err != nil {
+							hostinfo.logger(hm.l).WithField("relay", relay.String()).WithError(err).Info("Failed to add relay to hostmap")
+						}
+
+						m := NebulaControl{
+							Type:                NebulaControl_CreateRelayRequest,
+							InitiatorRelayIndex: idx,
+							RelayFromIp:         uint32(hm.lightHouse.myVpnIp),
+							RelayToIp:           uint32(vpnIp),
+						}
+						msg, err := m.Marshal()
+						if err != nil {
+							hostinfo.logger(hm.l).
+								WithError(err).
+								Error("Failed to marshal Control message to create relay")
+						} else {
+							hm.f.SendMessageToHostInfo(header.Control, 0, relayHostInfo, msg, make([]byte, 12), make([]byte, mtu))
+							hm.l.WithFields(logrus.Fields{
+								"relayFrom":           hm.lightHouse.myVpnIp,
+								"relayTo":             vpnIp,
+								"initiatorRelayIndex": idx,
+								"relay":               *relay}).
+								Info("send CreateRelayRequest")
+						}
+					}
+				}
+			}
+		} else {
+
+			hostinfo.logger(hm.l).Infof("Lincoln: no remote relays\n")
+		}
+
+	} else {
+
+		// Send the handshake to all known ips, stage 2 takes care of assigning the hostinfo.remote based on the first to reply
+		var sentTo []*udp.Addr
+		hostinfo.remotes.ForEach(hm.mainHostMap.GetPreferredRanges(), func(addr *udp.Addr, _ bool) {
+			hm.messageMetrics.Tx(header.Handshake, header.MessageSubType(hostinfo.HandshakePacket[0][1]), 1)
+			err := hm.outside.WriteTo(hostinfo.HandshakePacket[0], addr)
+			if err != nil {
+				hostinfo.logger(hm.l).WithField("udpAddr", addr).
+					WithField("initiatorIndex", hostinfo.localIndexId).
+					WithField("handshake", m{"stage": 1, "style": "ix_psk0"}).
+					WithError(err).Error("Failed to send handshake message")
+
+			} else {
+				sentTo = append(sentTo, addr)
+			}
+		})
+
+		// Don't be too noisy or confusing if we fail to send a handshake - if we don't get through we'll eventually log a timeout,
+		// so only log when the list of remotes has changed
+		if remotesHaveChanged {
+			hostinfo.logger(hm.l).WithField("udpAddrs", sentTo).
 				WithField("initiatorIndex", hostinfo.localIndexId).
 				WithField("handshake", m{"stage": 1, "style": "ix_psk0"}).
-				WithError(err).Error("Failed to send handshake message")
-
-		} else {
-			sentTo = append(sentTo, addr)
+				Info("Handshake message sent")
+		} else if hm.l.IsLevelEnabled(logrus.DebugLevel) {
+			hostinfo.logger(hm.l).WithField("udpAddrs", sentTo).
+				WithField("initiatorIndex", hostinfo.localIndexId).
+				WithField("handshake", m{"stage": 1, "style": "ix_psk0"}).
+				Debug("Handshake message sent")
 		}
-	})
-
-	// Don't be too noisy or confusing if we fail to send a handshake - if we don't get through we'll eventually log a timeout,
-	// so only log when the list of remotes has changed
-	if remotesHaveChanged {
-		hostinfo.logger(hm.l).WithField("udpAddrs", sentTo).
-			WithField("initiatorIndex", hostinfo.localIndexId).
-			WithField("handshake", m{"stage": 1, "style": "ix_psk0"}).
-			Info("Handshake message sent")
-	} else if hm.l.IsLevelEnabled(logrus.DebugLevel) {
-		hostinfo.logger(hm.l).WithField("udpAddrs", sentTo).
-			WithField("initiatorIndex", hostinfo.localIndexId).
-			WithField("handshake", m{"stage": 1, "style": "ix_psk0"}).
-			Debug("Handshake message sent")
-	}
 
 
-	if hm.config.useRelays && len(hostinfo.remotes.relays) > 0 {
-		hostinfo.logger(hm.l).WithField("relays", hostinfo.remotes.relays).Info("Attempt to relay through hosts")
-		// Send a RelayRequest to all known Relay IP's
-		for _, relay := range hostinfo.remotes.relays {
-			// Don't relay to myself, and don't relay through the host I'm trying to connect to
-			if *relay == vpnIp || *relay == hm.lightHouse.myVpnIp {
-				continue
-			}
-			relayHostInfo := hm.mainHostMap.QueryVpnIp(*relay)
-			if relayHostInfo == nil || relayHostInfo.remote == nil {
-				hostinfo.logger(hm.l).WithField("relay", relay.String()).Info("Establish tunnel to relay target")
-				hm.f.Handshake(*relay)
-				continue
-			}
-			// Check the relay HostInfo to see if we already established a relay through it
-			if existingRelay, ok := relayHostInfo.relayState.QueryRelayForByIp(vpnIp); ok {
-				switch existingRelay.State {
-				case Established:
-					hostinfo.logger(hm.l).WithField("relay", relay.String()).Info("Send handshake via relay")
-					hm.f.SendVia(relayHostInfo, existingRelay, hostinfo.HandshakePacket[0], make([]byte, 12), make([]byte, mtu), false)
-				case Requested:
-					hostinfo.logger(hm.l).WithField("relay", relay.String()).Info("Re-send CreateRelay request")
-					// Re-send the CreateRelay request, in case the previous one was lost.
-					m := NebulaControl{
-						Type:                NebulaControl_CreateRelayRequest,
-						InitiatorRelayIndex: existingRelay.LocalIndex,
-						RelayFromIp:         uint32(hm.lightHouse.myVpnIp),
-						RelayToIp:           uint32(vpnIp),
-					}
-					msg, err := m.Marshal()
-					if err != nil {
-						hostinfo.logger(hm.l).
-							WithError(err).
-							Error("Failed to marshal Control message to create relay")
-					} else {
-						// This must send over the hostinfo, not over hm.Hosts[ip]
-						hm.f.SendMessageToHostInfo(header.Control, 0, relayHostInfo, msg, make([]byte, 12), make([]byte, mtu))
-						hm.l.WithFields(logrus.Fields{
-							"relayFrom":           hm.lightHouse.myVpnIp,
-							"relayTo":             vpnIp,
-							"initiatorRelayIndex": existingRelay.LocalIndex,
-							"relay":               *relay}).
-							Info("send CreateRelayRequest")
-					}
-				default:
-					hostinfo.logger(hm.l).
-						WithField("vpnIp", vpnIp).
-						WithField("state", existingRelay.State).
-						WithField("relay", relayHostInfo.vpnIp).
-						Errorf("Relay unexpected state")
+		if hm.config.useRelays && len(hostinfo.remotes.relays) > 0 {
+			hostinfo.logger(hm.l).WithField("relays", hostinfo.remotes.relays).Info("Attempt to relay through hosts")
+			// Send a RelayRequest to all known Relay IP's
+			for _, relay := range hostinfo.remotes.relays {
+				// Don't relay to myself, and don't relay through the host I'm trying to connect to
+				if *relay == vpnIp || *relay == hm.lightHouse.myVpnIp {
+					continue
 				}
-			} else {
-				// No relays exist or requested yet.
-				if relayHostInfo.remote != nil {
-					idx, err := AddRelay(hm.l, relayHostInfo, hm.mainHostMap, vpnIp, nil, TerminalType, Requested)
-					if err != nil {
-						hostinfo.logger(hm.l).WithField("relay", relay.String()).WithError(err).Info("Failed to add relay to hostmap")
-					}
-
-					m := NebulaControl{
-						Type:                NebulaControl_CreateRelayRequest,
-						InitiatorRelayIndex: idx,
-						RelayFromIp:         uint32(hm.lightHouse.myVpnIp),
-						RelayToIp:           uint32(vpnIp),
-					}
-					msg, err := m.Marshal()
-					if err != nil {
+				relayHostInfo := hm.mainHostMap.QueryVpnIp(*relay)
+				if relayHostInfo == nil || relayHostInfo.remote == nil {
+					hostinfo.logger(hm.l).WithField("relay", relay.String()).Info("Establish tunnel to relay target")
+					hm.f.Handshake(*relay)
+					continue
+				}
+				// Check the relay HostInfo to see if we already established a relay through it
+				if existingRelay, ok := relayHostInfo.relayState.QueryRelayForByIp(vpnIp); ok {
+					switch existingRelay.State {
+					case Established:
+						hostinfo.logger(hm.l).WithField("relay", relay.String()).Info("Send handshake via relay")
+						hm.f.SendVia(relayHostInfo, existingRelay, hostinfo.HandshakePacket[0], make([]byte, 12), make([]byte, mtu), false)
+					case Requested:
+						hostinfo.logger(hm.l).WithField("relay", relay.String()).Info("Re-send CreateRelay request")
+						// Re-send the CreateRelay request, in case the previous one was lost.
+						m := NebulaControl{
+							Type:                NebulaControl_CreateRelayRequest,
+							InitiatorRelayIndex: existingRelay.LocalIndex,
+							RelayFromIp:         uint32(hm.lightHouse.myVpnIp),
+							RelayToIp:           uint32(vpnIp),
+						}
+						msg, err := m.Marshal()
+						if err != nil {
+							hostinfo.logger(hm.l).
+								WithError(err).
+								Error("Failed to marshal Control message to create relay")
+						} else {
+							// This must send over the hostinfo, not over hm.Hosts[ip]
+							hm.f.SendMessageToHostInfo(header.Control, 0, relayHostInfo, msg, make([]byte, 12), make([]byte, mtu))
+							hm.l.WithFields(logrus.Fields{
+								"relayFrom":           hm.lightHouse.myVpnIp,
+								"relayTo":             vpnIp,
+								"initiatorRelayIndex": existingRelay.LocalIndex,
+								"relay":               *relay}).
+								Info("send CreateRelayRequest")
+						}
+					default:
 						hostinfo.logger(hm.l).
-							WithError(err).
-							Error("Failed to marshal Control message to create relay")
-					} else {
-						hm.f.SendMessageToHostInfo(header.Control, 0, relayHostInfo, msg, make([]byte, 12), make([]byte, mtu))
-						hm.l.WithFields(logrus.Fields{
-							"relayFrom":           hm.lightHouse.myVpnIp,
-							"relayTo":             vpnIp,
-							"initiatorRelayIndex": idx,
-							"relay":               *relay}).
-							Info("send CreateRelayRequest")
+							WithField("vpnIp", vpnIp).
+							WithField("state", existingRelay.State).
+							WithField("relay", relayHostInfo.vpnIp).
+							Errorf("Relay unexpected state")
+					}
+				} else {
+					// No relays exist or requested yet.
+					if relayHostInfo.remote != nil {
+						idx, err := AddRelay(hm.l, relayHostInfo, hm.mainHostMap, vpnIp, nil, TerminalType, Requested)
+						if err != nil {
+							hostinfo.logger(hm.l).WithField("relay", relay.String()).WithError(err).Info("Failed to add relay to hostmap")
+						}
+
+						m := NebulaControl{
+							Type:                NebulaControl_CreateRelayRequest,
+							InitiatorRelayIndex: idx,
+							RelayFromIp:         uint32(hm.lightHouse.myVpnIp),
+							RelayToIp:           uint32(vpnIp),
+						}
+						msg, err := m.Marshal()
+						if err != nil {
+							hostinfo.logger(hm.l).
+								WithError(err).
+								Error("Failed to marshal Control message to create relay")
+						} else {
+							hm.f.SendMessageToHostInfo(header.Control, 0, relayHostInfo, msg, make([]byte, 12), make([]byte, mtu))
+							hm.l.WithFields(logrus.Fields{
+								"relayFrom":           hm.lightHouse.myVpnIp,
+								"relayTo":             vpnIp,
+								"initiatorRelayIndex": idx,
+								"relay":               *relay}).
+								Info("send CreateRelayRequest")
+						}
 					}
 				}
 			}
