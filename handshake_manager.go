@@ -184,8 +184,6 @@ func (hm *HandshakeManager) handleOutbound(vpnIp iputil.VpnIp, lighthouseTrigger
 
 	hostinfo := hh.hostinfo
 
-	hostinfo.logger(hm.l).WithFields(logrus.Fields{"relays": hostinfo.remotes.relays, "relay enabled": hm.config.useRelays}).Info("Are we relaying?")
-
 	// If we are out of time, clean up
 	if hh.counter >= hm.config.retries {
 		hh.hostinfo.logger(hm.l).WithField("udpAddrs", hh.hostinfo.remotes.CopyAddrs(hm.mainHostMap.GetPreferredRanges())).
