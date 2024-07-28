@@ -1,3 +1,2 @@
-service/avoid-service
-tunnel/avoid-tunnel
-cli/avoid-cli
+services/*/avoid-*
+cli/*/avoid-*

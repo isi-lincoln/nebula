@@ -239,8 +239,16 @@ func (hm *HandshakeManager) handleOutbound(vpnIp iputil.VpnIp, lighthouseTrigger
 	}
 
 
+	lhmap := hm.lightHouse.GetLighthouses()
+	isLH := false
+	for k, _ := range lhmap {
+		hostinfo.logger(hm.l).Infof("Lincoln: vpnIp: %#v, lighthouse: %#v\n", vpnIp.String(), k.String())
+		if vpnIp == k {
+			isLH = true
+		}
+	}
 	// dont force if the node is lighthouse
-	if hm.config.forceRelays && vpnIp != hm.lightHouse.myVpnIp {
+	if hm.config.forceRelays && !isLH {
 		hostinfo.logger(hm.l).Infof("Lincoln: Relay remote values: %#v\n", hostinfo.remotes)
 
 		if len(hostinfo.remotes.relays) > 0 {
