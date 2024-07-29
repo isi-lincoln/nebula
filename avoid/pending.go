@@ -7,7 +7,7 @@ import (
 var (
 	RunnerPrefix       = "/runners"
 	PendingPrefix      = "/pending"
-	ActionPrefix       = "/actions"
+	ActionPrefix       = "/actionrequest"
 	ConnPrefix         = "/connections"
 	FailPrefix         = "/failed"
 	RegistrationPrefix = "/registration"

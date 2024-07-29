@@ -70,7 +70,7 @@ func (s *AvoidRelay) Register(ctx context.Context, req *avoid.RegisterRequest) (
 	fields := log.Fields{"registration": reg}
 
 	// now we need to store the registration object to be used later
-	err = stor.WriteObjects([]stor.Object{reg}, true)
+	err = stor.WriteObjects([]stor.Object{reg}, false)
 	if err != nil {
 		return nil, err
 	}

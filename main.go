@@ -308,17 +308,6 @@ func Main(c *config.C, configTest bool, buildVersion string, logger *logrus.Logg
 	}
 
 	var avoidStart func()
-	if avoidConf != nil {
-		if avoidConf.GetManager() {
-			l.Infof("Starting avoid server\n")
-			// TODO: what other hooks do i need to kill
-			// connections
-			avoidStart = checkIfStartAvoidClient(l, avoidConf)
-			if avoidStart == nil {
-				return nil, fmt.Errorf("Failed to get avoid service up")
-			}
-		}
-	}
 
 	return &Control{
 		ifce,

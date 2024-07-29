@@ -225,10 +225,13 @@ func WithAvoidRelay(endpoint string, tlsCfg *stor.TLSConfig, f func(AvoidRelayCl
 	if creds != nil {
 		conn, err = grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
 		if err != nil {
-			return fmt.Errorf("failed to connect to avoid relay service: %v", err)
+			return fmt.Errorf("failed to connect to avoid relay service (TLS): %v", err)
 		}
 	} else {
 		conn, err = grpc.NewClient(endpoint, grpc.WithInsecure())
+		if err != nil {
+			return fmt.Errorf("failed to connect to avoid relay service (no TLS): %v", err)
+		}
 	}
 
 	client := NewAvoidRelayClient(conn)
@@ -246,10 +249,13 @@ func WithAvoidManager(endpoint string, tlsCfg *stor.TLSConfig, f func(AvoidManag
 	if creds != nil {
 		conn, err = grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
 		if err != nil {
-			return fmt.Errorf("failed to connect to avoid manager service: %v", err)
+			return fmt.Errorf("failed to connect to avoid manager service (TLS): %v", err)
 		}
 	} else {
 		conn, err = grpc.NewClient(endpoint, grpc.WithInsecure())
+		if err != nil {
+			return fmt.Errorf("failed to connect to avoid manager service (no TLS): %v", err)
+		}
 	}
 
 	client := NewAvoidManagerClient(conn)
@@ -267,10 +273,13 @@ func WithAvoidClient(endpoint string, tlsCfg *stor.TLSConfig, f func(AvoidClient
 	if creds != nil {
 		conn, err = grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
 		if err != nil {
-			return fmt.Errorf("failed to connect to avoid client service: %v", err)
+			return fmt.Errorf("failed to connect to avoid client service (TLS): %v", err)
 		}
 	} else {
 		conn, err = grpc.NewClient(endpoint, grpc.WithInsecure())
+		if err != nil {
+			return fmt.Errorf("failed to connect to avoid client service (no TLS): %v", err)
+		}
 	}
 
 	client := NewAvoidClientClient(conn)

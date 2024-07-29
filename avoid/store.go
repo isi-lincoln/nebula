@@ -23,6 +23,7 @@ const (
 )
 
 const (
+	NoError      = iota
 	Unspecified  = iota
 	ErrNotFound  = iota
 	TxnFailedNum = iota
@@ -45,6 +46,9 @@ func (e *ObjectError) Error() string {
 }
 
 func (e *ObjectError) ToError() error {
+	if e.Code == 0 {
+		return nil
+	}
 	return fmt.Errorf("%d: %s", e.Code, e.Message)
 }
 
@@ -286,7 +290,7 @@ func WriteObjects(objs []stor.Object, fresh bool, opts ...clientv3.OpOption) *Ob
 
 	log.Tracef("Write (%v) Size: %d", names, objsize)
 
-	code := 0
+	code := NoError
 	err := stor.WithEtcd(func(c *clientv3.Client) error {
 		kvc := clientv3.NewKV(c)
 		if kvc == nil {
@@ -445,7 +449,7 @@ func RunObjectTx(otx ObjectTx) error {
 		names = append(names, x.Key())
 		ops = append(ops, clientv3.OpDelete(x.Key()))
 	}
-	log.Tracef("DeleteTx: (%v)", names)
+	log.Debugf("DeleteTx: (%v)", names)
 
 	code := 0
 	err := stor.WithEtcd(func(c *clientv3.Client) error {
@@ -569,6 +573,9 @@ func RUC(o stor.Object, update func(o stor.Object)) error {
 
 		eo := WriteObjects([]stor.Object{o}, false)
 		if eo == nil {
+			return nil
+		}
+		if eo.Error == nil {
 			return nil
 		}
 		if eo.Code == TxnFailedNum {

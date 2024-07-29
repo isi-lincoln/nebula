@@ -83,6 +83,8 @@ func actionFunc() {
 					log.Debugf("delete event for key: %s", x.Kv.Key)
 					continue
 				}
+
+				log.Debugf("handling key (Type: %#v): %s", x.Type, x.Kv.Key)
 				pending := &avoid.Pending{}
 				err := json.Unmarshal(x.Kv.Value, pending)
 				if err != nil {
@@ -90,6 +92,10 @@ func actionFunc() {
 					avoid.ErrorEF("unmarshalling pending failed", err, fields)
 				}
 
+				// TODO: bad code - we are RUC'ing an object we are watching on, fix this
+				if pending.Owner == actionID || pending.ErrCount > 2 {
+					continue
+				}
 				// we've gotten an event, we need to handle it now.
 				err = avoid.RUC(pending, func(o stor.Object) {
 					o.(*avoid.Pending).Owner = actionID
@@ -138,9 +144,11 @@ func actionFunc() {
 
 func actionHandler(lease int, aid, actionKey string) error {
 	key := strings.TrimLeft(actionKey, fmt.Sprintf("%s/", avoid.ActionPrefix))
-	fields := log.Fields{"key": key}
+	fields := log.Fields{"key": key, "lease": lease, "action id": aid, "actionKey": actionKey}
 	ak := &avoid.ActionRequest{
-		Uuid: key,
+		Action: &avoid.ActionMessage{
+			Uuid: key,
+		},
 	}
 	// read the action
 	err := avoid.ReadStandard(ak)
@@ -149,7 +157,7 @@ func actionHandler(lease int, aid, actionKey string) error {
 	}
 	// TODO: validate action request
 
-	newAk := ak.Action
+	newAk := *ak.Action
 	newAk.Uuid = ""
 
 	reg := &avoid.Registration{
@@ -165,20 +173,22 @@ func actionHandler(lease int, aid, actionKey string) error {
 	}
 	// TODO validate registration
 	fields["token"] = reg.Token
-	fields["addr"] = fmt.Sprintf("%s:%d", reg.UE, reg.Port)
+	fields["addr"] = fmt.Sprintf("%s:%d", reg.IP, reg.Port)
 
 	ar := &avoid.ActionRequest{
 		Identifier: ak.Identifier,
 		Values:     ak.Values,
 		Token:      reg.Token,
-		Action:     newAk,
+		Action:     &newAk,
 	}
 
-	ueAddr := fmt.Sprintf("%s:%s", reg.UE, reg.Port)
+	ueAddr := fmt.Sprintf("%s:%d", reg.IP, reg.Port)
+	fields["action request"] = ar
 
-	// TODO: TLS
 	connInfo := &avoid.ConnectionInfo{}
+	log.WithFields(fields).Info("calling back to client")
 	err = avoid.WithAvoidClient(ueAddr, nil, func(c avoid.AvoidClientClient) error {
+
 		// TODO: add context timeout
 		resp, err := c.Action(context.TODO(), ar)
 		if err != nil {
@@ -192,15 +202,20 @@ func actionHandler(lease int, aid, actionKey string) error {
 		return avoid.ErrorEF("failed action on client", err, fields)
 	}
 
+	// TODO: sanitize and verify UE
+	connInfo.Uuid = ak.Identifier
+
 	pending := &avoid.Pending{ActionKey: actionKey}
 
+	log.Infof("attempting to delete keys: %s, %s\n", pending.Key(), ak.Key())
+
 	// remove pending, action, and save results in connections
-	tx := avoid.ObjectTx{
+	tx := stor.ObjectTx{
 		Put:    []stor.Object{connInfo},
 		Delete: []stor.Object{pending, ak},
 	}
 
-	err = avoid.RunObjectTx(tx)
+	err = stor.RunObjectTx(tx)
 	if err != nil {
 		return avoid.ErrorEF("failed to txn action handler", err, fields)
 	}
