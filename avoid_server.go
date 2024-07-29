@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
+	"fmt"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/slackhq/nebula/avoid"
 	"github.com/slackhq/nebula/config"
 	"google.golang.org/grpc"
@@ -35,7 +36,7 @@ func checkConfigForCerts(c *config.C) (bool, string, string, error) {
 
 type UEClient struct {
 	avoid.UnimplementedAvoidClientServer
-	log *logrus.Logger
+	log *log.Logger
 }
 
 func (s *UEClient) Action(ctx context.Context, req *avoid.ActionRequest) (*avoid.ConnectionInfo, error) {
@@ -43,7 +44,7 @@ func (s *UEClient) Action(ctx context.Context, req *avoid.ActionRequest) (*avoid
 		return nil, avoid.Error("invalid action request")
 	}
 
-	s.log.WithFields(logrus.Fields{"request": req}).Infof("Action Request")
+	s.log.WithFields(log.Fields{"request": req}).Infof("Action Request")
 	return &avoid.ConnectionInfo{}, nil
 }
 
@@ -52,7 +53,7 @@ func (s *UEClient) HealthCheck(ctx context.Context, req *avoid.HealthRequest) (*
 	return &avoid.HealthReply{}, nil
 }
 
-func startAvoidClient(l *logrus.Logger, addr, cert, key string) error {
+func startAvoidClient(l *log.Logger, addr, cert, key string) error {
 	// TODO: maybe better to just use myVPNip
 	l.Infof("starting avoid tunnel api: %s", addr)
 
@@ -86,7 +87,7 @@ func startAvoidClient(l *logrus.Logger, addr, cert, key string) error {
 	return nil
 }
 
-func checkIfStartAvoidClient(l *logrus.Logger, av *avoid.Avoid) func() {
+func checkIfStartAvoidClient(l *log.Logger, av *avoid.Avoid) func() {
 	if av != nil {
 		mgr := av.GetManager()
 		primary := av.GetPrimary()
@@ -105,4 +106,42 @@ func checkIfStartAvoidClient(l *logrus.Logger, av *avoid.Avoid) func() {
 	}
 
 	return nil
+}
+
+
+type AvoidClient struct {
+	avoid.UnimplementedAvoidClientServer
+	token string
+}
+
+func NewAvoidClient(token string) *AvoidClient {
+	return &AvoidClient{token: token}
+}
+
+func (s *AvoidClient) Action(ctx context.Context, req *avoid.ActionRequest) (*avoid.ConnectionInfo, error) {
+	if req == nil {
+		errMsg := fmt.Sprintf("Invalid Request: Action")
+		log.Errorf("%s", errMsg)
+		return nil, fmt.Errorf("%s", errMsg)
+	}
+
+	log.WithFields(log.Fields{"request": req}).Info("Action Request")
+
+	return &avoid.ConnectionInfo{}, nil
+}
+
+func (s *AvoidClient) HealthCheck(ctx context.Context, req *avoid.HealthRequest) (*avoid.HealthReply, error) {
+	log.Infof("liveness check\n")
+
+	return &avoid.HealthReply{}, nil
+}
+
+func startAvoidClientService(addr, token string) {
+	clientAddr, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("failed to listen on tunnel addr: %v", err)
+	}
+	grpcAvoidClientServer := grpc.NewServer()
+	avoid.RegisterAvoidClientServer(grpcAvoidClientServer, NewAvoidClient(token))
+	grpcAvoidClientServer.Serve(clientAddr)
 }

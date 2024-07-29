@@ -33,7 +33,7 @@ type Runner struct {
 }
 
 func (x *Runner) Key() string {
-	return fmt.Sprintf("%s/%s/%s", avoid.RunnerPrefix, x.Uuid)
+	return fmt.Sprintf("%s/%s", avoid.RunnerPrefix, x.Uuid)
 }
 func (x *Runner) SetVersion(v int64) { x.Version = v }
 func (x *Runner) GetVersion() int64  { return x.Version }

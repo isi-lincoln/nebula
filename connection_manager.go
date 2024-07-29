@@ -345,22 +345,24 @@ func (n *connectionManager) Start(ctx context.Context) {
 					n.l.Infof("have ip: %s", n.intf.myVpnIp.String())
 
 					if client {
-						// register server
-						go func(){
-							err := checkIfStartAvoidClient(n.l, n.avoidConf)
-							if err != nil {
-								n.l.Errorf("avoid service has crashed: %v\n", err)
-							}
-						}()
-
 						ep, err := n.registerAvoid(primary, backups, identity, ourIP, ourPort)
 						if err != nil {
 							n.l.Errorf("Error registering avoid UE: %v\n", err)
+							continue
 						}
 						if ep == nil {
 							n.l.Errorf("Unable to register with any endpoints\n")
+							continue
 						}
 
+						// start server
+						listenAddr := fmt.Sprintf("%s:%d", ourIP, ourPort)
+						if n.avoidToken == "" {
+							n.l.Errorf("Our token is empty")
+							continue
+						}
+
+						startAvoidClientService(listenAddr, n.avoidToken)
 					}
 					n.l.Errorf("Retrying...\n")
 					time.Sleep(1 * time.Second)

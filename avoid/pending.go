@@ -28,7 +28,7 @@ type Registration struct {
 }
 
 func (x *Registration) Key() string {
-	return fmt.Sprintf("%s/%s/%s", RegistrationPrefix, x.UE)
+	return fmt.Sprintf("%s/%s", RegistrationPrefix, x.UE)
 }
 func (x *Registration) SetVersion(v int64) { x.Version = v }
 func (x *Registration) GetVersion() int64  { return x.Version }

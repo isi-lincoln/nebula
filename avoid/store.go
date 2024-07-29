@@ -567,7 +567,7 @@ func RUC(o stor.Object, update func(o stor.Object)) error {
 	for i := 0; i < rucRetry; i++ {
 		update(o)
 
-		eo := WriteObjects([]stor.Object{o}, true)
+		eo := WriteObjects([]stor.Object{o}, false)
 		if eo == nil {
 			return nil
 		}
