@@ -6,3 +6,10 @@ etcd:
    key: /etc/etcd/db-key.pem
    cert: /etc/etcd/db.pem
    cacert: /etc/etcd/ca.pem
+
+client:
+  eps:
+    - address: "{{ overlay['lh'].ip }}" # avoid manager endpoint is also lighthouse
+      port: 55554
+      timeout: 3000000000 # 3s
+  identity: "{{ inventory_hostname }}"
