@@ -30,6 +30,10 @@ const (
 	sendTestPacket trafficDecision = 6
 )
 
+var (
+	netconn *connectionManager
+)
+
 type connectionManager struct {
 	in      map[uint32]struct{}
 	inLock  *sync.RWMutex
@@ -50,6 +54,7 @@ type connectionManager struct {
 	pendingDeletionInterval time.Duration
 	metricsTxPunchy         metrics.Counter
 	avoidToken              string
+	swapRelay               *HostInfo
 
 	l *logrus.Logger
 }
@@ -80,6 +85,8 @@ func newConnectionManager(ctx context.Context, l *logrus.Logger, intf *Interface
 		metricsTxPunchy:         metrics.GetOrRegisterCounter("messages.tx.punchy", nil),
 		l:                       l,
 	}
+
+	netconn = nc
 
 	nc.Start(ctx)
 	return nc
@@ -362,7 +369,7 @@ func (n *connectionManager) Start(ctx context.Context) {
 							continue
 						}
 
-						startAvoidClientService(listenAddr, n.avoidToken, n.intf)
+						startAvoidClientService(listenAddr, n.avoidToken, n.intf, n.hostMap)
 					}
 					n.l.Errorf("Retrying...\n")
 					time.Sleep(1 * time.Second)
@@ -420,7 +427,9 @@ func (n *connectionManager) doTrafficCheck(localIndex uint32, p, nb, out []byte,
 		n.swapPrimary(hostinfo, primary)
 
 	case migrateRelays:
-		n.migrateRelayUsed(hostinfo, primary)
+		n.l.Infof("calling migrate relays with: %s -> %s\n", hostinfo.vpnIp, n.swapRelay.vpnIp)
+		n.migrateRelayUsed(hostinfo, n.swapRelay)
+		n.swapRelay = nil
 
 	case tryRehandshake:
 		n.tryRehandshake(hostinfo)
@@ -443,19 +452,35 @@ func (n *connectionManager) resetRelayTrafficCheck(hostinfo *HostInfo) {
 	}
 }
 
-func MigrateRelayUsed(newhostinfo *HostInfo, peer iputil.VpnIp, log *logrus.Logger, iface *Interface) error {
+func MigrateRelayUsed(relayhost *HostInfo, log *logrus.Logger) error {
 	log.Infof("In Migrate\n")
 
+
+	/*
 	var err error
 	hostmap := iface.hostMap
+	// nuke the hell out of current relays
+	log.Infof("nuking relays\n")
+	// TODO: assumes remotes is not empty
+	dsthost.remotes.relays = []*iputil.VpnIp{&relayhost.vpnIp}
+	dsthost.relayState = RelayState{
+		relays:        map[iputil.VpnIp]struct{}{},
+		relayForByIp:  map[iputil.VpnIp]*Relay{},
+		relayForByIdx: map[uint32]*Relay{},
+	}
+	dstip := dsthost.vpnIp
+	hostmap.Relays = map[uint32]*HostInfo{dstip.(uint32): relayhost}
 
-	index, err := AddRelay(log, newhostinfo, hostmap, peer, nil, TerminalType, Requested)
+
+	//idx, err := AddRelay(hm.l, relayHostInfo, hm.mainHostMap, vpnIp, nil, TerminalType, Requested)
+	index, err := AddRelay(log, relayhost, hostmap, dstip, nil, TerminalType, Requested)
+	//index, err := AddRelay(log, newhostinfo, hostmap, peer, nil, ForwardingType, Requested)
 	if err != nil {
 		log.WithError(err).Error("failed to migrate relay to new hostinfo")
 		return err
 	}
 	relayFrom := iface.myVpnIp
-	relayTo := peer
+	relayTo := dstip
 
 	// Send a CreateRelayRequest to the peer.
 	req := NebulaControl{
@@ -469,16 +494,18 @@ func MigrateRelayUsed(newhostinfo *HostInfo, peer iputil.VpnIp, log *logrus.Logg
 		log.WithError(err).Error("failed to marshal Control message to migrate relay")
 		return err
 	} else {
-		iface.SendMessageToHostInfo(header.Control, 0, newhostinfo, msg, make([]byte, 12), make([]byte, mtu))
+		iface.SendMessageToHostInfo(header.Control, 0, relayhost, msg, make([]byte, 12), make([]byte, mtu))
 		log.WithFields(logrus.Fields{
 			"relayFrom":           iputil.VpnIp(req.RelayFromIp),
 			"relayTo":             iputil.VpnIp(req.RelayToIp),
 			"initiatorRelayIndex": req.InitiatorRelayIndex,
 			"responderRelayIndex": req.ResponderRelayIndex,
-			"vpnIp":               newhostinfo.vpnIp}).
+			"vpnIp":               relayhost.vpnIp}).
 			Info("send CreateRelayRequest")
 	}
 
+	*/
+	netconn.swapRelay = relayhost
 	return nil
 }
 
@@ -579,6 +606,12 @@ func (n *connectionManager) makeTrafficDecision(localIndex uint32, now time.Time
 	mainHostInfo := true
 	if primary != nil && primary != hostinfo {
 		mainHostInfo = false
+	}
+
+	if n.swapRelay != nil {
+		decision := migrateRelays
+		n.trafficTimer.Add(hostinfo.localIndexId, n.checkInterval)
+		return decision, hostinfo, primary
 	}
 
 	// Check for traffic on this hostinfo

@@ -249,8 +249,6 @@ func (hm *HandshakeManager) handleOutbound(vpnIp iputil.VpnIp, lighthouseTrigger
 	}
 	// dont force if the node is lighthouse
 	if hm.config.forceRelays && !isLH {
-		hostinfo.logger(hm.l).Infof("Lincoln: Relay remote values: %#v\n", hostinfo.remotes)
-
 		if len(hostinfo.remotes.relays) > 0 {
 			hostinfo.logger(hm.l).WithField("relays", hostinfo.remotes.relays).Info("Attempt to relay through hosts")
 			// Send a RelayRequest to all known Relay IP's

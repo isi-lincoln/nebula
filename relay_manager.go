@@ -51,6 +51,7 @@ func (rm *relayManager) setAmRelay(v bool) {
 // AddRelay finds an available relay index on the hostmap, and associates the relay info with it.
 // relayHostInfo is the Nebula peer which can be used as a relay to access the target vpnIp.
 func AddRelay(l *logrus.Logger, relayHostInfo *HostInfo, hm *HostMap, vpnIp iputil.VpnIp, remoteIdx *uint32, relayType int, state int) (uint32, error) {
+	l.Infof("Lincoln: AddRelay: %s %s %d %d %d\n", relayHostInfo.vpnIp.String(), vpnIp.String(), remoteIdx, relayType, state)
 	hm.Lock()
 	defer hm.Unlock()
 	for i := 0; i < 32; i++ {

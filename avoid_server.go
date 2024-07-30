@@ -117,8 +117,8 @@ type AvoidClient struct {
 	hostmap *HostMap
 }
 
-func NewAvoidClient(token string, iface *Interface) *AvoidClient {
-	return &AvoidClient{token: token, iface: iface}
+func NewAvoidClient(token string, iface *Interface, hostmap *HostMap) *AvoidClient {
+	return &AvoidClient{token: token, iface: iface, hostmap: hostmap}
 }
 
 func (s *AvoidClient) Action(ctx context.Context, req *avoid.ActionRequest) (*avoid.ConnectionInfo, error) {
@@ -132,9 +132,10 @@ func (s *AvoidClient) Action(ctx context.Context, req *avoid.ActionRequest) (*av
 
 	switch req.Action.Action {
 	case avoid.ActionMessage_MIGRATE:
-		break
+		log.WithFields(fields).Info("Migration")
 		switch req.Action.Connection {
 		case avoid.ActionMessage_RELAY:
+			log.WithFields(fields).Info("Relay")
 
 			// get hostinfo of dst
 			// TODO: Make better - add to hostmap as necessary
@@ -148,11 +149,14 @@ func (s *AvoidClient) Action(ctx context.Context, req *avoid.ActionRequest) (*av
 				return nil, err
 			}
 
+			fields["dst addr"] = addr
+
 			// addr is 128 for ipv6, but nebula is ipv4
 			dstip := iputil.Ip2VpnIp(addr.AsSlice())
 
-			hostinfo := s.hostmap.QueryVpnIp(dstip)
-			if hostinfo == nil {
+			dsthostinfo := s.hostmap.QueryVpnIp(dstip)
+			if dsthostinfo == nil {
+				log.WithError(err).Error("destination not found in hostmap: %s", dstip.String())
 				return nil, fmt.Errorf("destination not found in hostmap: %s", dstip.String())
 			}
 
@@ -164,16 +168,23 @@ func (s *AvoidClient) Action(ctx context.Context, req *avoid.ActionRequest) (*av
 			}
 
 			// addr is 128 for ipv6, but nebula is ipv4
-			peer := iputil.Ip2VpnIp(addr.AsSlice())
+			relayip := iputil.Ip2VpnIp(addr.AsSlice())
+
+			relayhostinfo := s.hostmap.QueryVpnIp(relayip)
+			if relayhostinfo == nil {
+				log.WithError(err).Error("relay not found in hostmap: %s", relayip.String())
+				return nil, fmt.Errorf("relay not found in hostmap: %s", relayip.String())
+			}
 
 			// setup the relay change
-			err = MigrateRelayUsed(hostinfo, peer, s.iface.l, s.iface)
+			//err = MigrateRelayUsed(relayhostinfo, dsthostinfo, s.iface.l, s.iface)
+			err = MigrateRelayUsed(relayhostinfo, s.iface.l)
 			if err != nil {
 				log.WithError(err).Errorf("failed in Action: Migrate")
 				return nil, err
 			}
 
-			return &avoid.ConnectionInfo{Relay: peer.String()}, nil
+			return &avoid.ConnectionInfo{Relay: relayip.String()}, nil
 
 		case avoid.ActionMessage_LIGHTHOUSE:
 			log.WithFields(fields).Error("Lighthouse not implemented")
@@ -198,12 +209,12 @@ func (s *AvoidClient) HealthCheck(ctx context.Context, req *avoid.HealthRequest)
 	return &avoid.HealthReply{}, nil
 }
 
-func startAvoidClientService(addr, token string, iface *Interface) {
+func startAvoidClientService(addr, token string, iface *Interface, hostmap *HostMap) {
 	clientAddr, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("failed to listen on tunnel addr: %v", err)
 	}
 	grpcAvoidClientServer := grpc.NewServer()
-	avoid.RegisterAvoidClientServer(grpcAvoidClientServer, NewAvoidClient(token, iface))
+	avoid.RegisterAvoidClientServer(grpcAvoidClientServer, NewAvoidClient(token, iface, hostmap))
 	grpcAvoidClientServer.Serve(clientAddr)
 }

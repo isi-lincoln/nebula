@@ -677,6 +677,7 @@ func (i *HostInfo) CreateRemoteCIDR(c *cert.NebulaCertificate) {
 	i.remoteCidr = remoteCidr
 }
 
+
 func (i *HostInfo) logger(l *logrus.Logger) *logrus.Entry {
 	if i == nil {
 		return logrus.NewEntry(l)
