@@ -1033,6 +1033,7 @@ func (lhh *LightHouseHandler) coalesceAnswers(c *cache, n *NebulaMeta) {
 		}
 	}
 
+	// TODO: Lincoln- i think here is the code that we want to programatically change
 	if c.relay != nil {
 		n.Details.RelayVpnIp = append(n.Details.RelayVpnIp, c.relay.relay...)
 	}

@@ -362,7 +362,7 @@ func (n *connectionManager) Start(ctx context.Context) {
 							continue
 						}
 
-						startAvoidClientService(listenAddr, n.avoidToken)
+						startAvoidClientService(listenAddr, n.avoidToken, n.intf)
 					}
 					n.l.Errorf("Retrying...\n")
 					time.Sleep(1 * time.Second)
@@ -442,6 +442,46 @@ func (n *connectionManager) resetRelayTrafficCheck(hostinfo *HostInfo) {
 		}
 	}
 }
+
+func MigrateRelayUsed(newhostinfo *HostInfo, peer iputil.VpnIp, log *logrus.Logger, iface *Interface) error {
+	log.Infof("In Migrate\n")
+
+	var err error
+	hostmap := iface.hostMap
+
+	index, err := AddRelay(log, newhostinfo, hostmap, peer, nil, TerminalType, Requested)
+	if err != nil {
+		log.WithError(err).Error("failed to migrate relay to new hostinfo")
+		return err
+	}
+	relayFrom := iface.myVpnIp
+	relayTo := peer
+
+	// Send a CreateRelayRequest to the peer.
+	req := NebulaControl{
+		Type:                NebulaControl_CreateRelayRequest,
+		InitiatorRelayIndex: index,
+		RelayFromIp:         uint32(relayFrom),
+		RelayToIp:           uint32(relayTo),
+	}
+	msg, err := req.Marshal()
+	if err != nil {
+		log.WithError(err).Error("failed to marshal Control message to migrate relay")
+		return err
+	} else {
+		iface.SendMessageToHostInfo(header.Control, 0, newhostinfo, msg, make([]byte, 12), make([]byte, mtu))
+		log.WithFields(logrus.Fields{
+			"relayFrom":           iputil.VpnIp(req.RelayFromIp),
+			"relayTo":             iputil.VpnIp(req.RelayToIp),
+			"initiatorRelayIndex": req.InitiatorRelayIndex,
+			"responderRelayIndex": req.ResponderRelayIndex,
+			"vpnIp":               newhostinfo.vpnIp}).
+			Info("send CreateRelayRequest")
+	}
+
+	return nil
+}
+
 
 func (n *connectionManager) migrateRelayUsed(oldhostinfo, newhostinfo *HostInfo) {
 	relayFor := oldhostinfo.relayState.CopyAllRelayFor()
