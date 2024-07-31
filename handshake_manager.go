@@ -32,6 +32,7 @@ var (
 		triggerBuffer: DefaultHandshakeTriggerBuffer,
 		useRelays:     DefaultUseRelays,
 		forceRelays:     DefaultForceRelays,
+		forcedRelay: nil,
 	}
 )
 
@@ -41,6 +42,7 @@ type HandshakeConfig struct {
 	triggerBuffer int
 	useRelays     bool
 	forceRelays     bool
+	forcedRelay  *iputil.VpnIp
 
 	messageMetrics *MessageMetrics
 }
@@ -247,6 +249,11 @@ func (hm *HandshakeManager) handleOutbound(vpnIp iputil.VpnIp, lighthouseTrigger
 			isLH = true
 		}
 	}
+
+	if hm.config.forcedRelay != nil {
+		hostinfo.remotes.relays = []*iputil.VpnIp{hm.config.forcedRelay}
+	}
+
 	// dont force if the node is lighthouse
 	if hm.config.forceRelays && !isLH {
 		if len(hostinfo.remotes.relays) > 0 {

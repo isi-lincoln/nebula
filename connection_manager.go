@@ -427,9 +427,29 @@ func (n *connectionManager) doTrafficCheck(localIndex uint32, p, nb, out []byte,
 		n.swapPrimary(hostinfo, primary)
 
 	case migrateRelays:
-		n.l.Infof("calling migrate relays with: %s -> %s\n", hostinfo.vpnIp, n.swapRelay.vpnIp)
-		n.migrateRelayUsed(hostinfo, n.swapRelay)
-		n.swapRelay = nil
+		// TODO: Lincoln - because this is a traffic decision, it may not be the
+		// hostinfo we need to swap with, so we need to set a dest hostip
+		// check against that and then set migrate on it
+		if n.swapRelay != nil {
+			// we cannot swap to the current relay
+			if n.swapRelay.vpnIp == hostinfo.vpnIp {
+				n.l.Errorf("Cannot swap from self to self%s\n", hostinfo.vpnIp, n.swapRelay.vpnIp)
+				n.swapRelay = nil
+			} else {
+				// kill the current tunnel
+				n.intf.sendCloseTunnel(hostinfo)
+				n.intf.closeTunnel(hostinfo)
+
+				// set a new relay in handshake manager
+				n.intf.handshakeManager.config.forcedRelay = &n.swapRelay.vpnIp
+				n.l.Infof("calling migrate relays with: %s -> %s\n", hostinfo.vpnIp, n.swapRelay.vpnIp)
+				// call migrate to swap data structs
+				n.migrateRelayUsed(hostinfo, n.swapRelay)
+
+				// reset swap
+				n.swapRelay = nil
+			}
+		}
 
 	case tryRehandshake:
 		n.tryRehandshake(hostinfo)
@@ -471,8 +491,6 @@ func MigrateRelayUsed(relayhost *HostInfo, log *logrus.Logger) error {
 	dstip := dsthost.vpnIp
 	hostmap.Relays = map[uint32]*HostInfo{dstip.(uint32): relayhost}
 
-
-	//idx, err := AddRelay(hm.l, relayHostInfo, hm.mainHostMap, vpnIp, nil, TerminalType, Requested)
 	index, err := AddRelay(log, relayhost, hostmap, dstip, nil, TerminalType, Requested)
 	//index, err := AddRelay(log, newhostinfo, hostmap, peer, nil, ForwardingType, Requested)
 	if err != nil {
@@ -511,10 +529,14 @@ func MigrateRelayUsed(relayhost *HostInfo, log *logrus.Logger) error {
 
 
 func (n *connectionManager) migrateRelayUsed(oldhostinfo, newhostinfo *HostInfo) {
+	n.l.Debugf("in migrateRelay: %s -> %s\n", oldhostinfo.vpnIp.String(), newhostinfo.vpnIp.String())
 	relayFor := oldhostinfo.relayState.CopyAllRelayFor()
+	n.l.Debugf("relayFor: %#v", relayFor)
 
 	for _, r := range relayFor {
+		n.l.Debugf("old- relayFor: %v", r.PeerIp.String())
 		existing, ok := newhostinfo.relayState.QueryRelayForByIp(r.PeerIp)
+		n.l.Debugf("old- existing: %#v, ok: %v", existing, ok)
 
 		var index uint32
 		var relayFrom iputil.VpnIp
@@ -537,8 +559,11 @@ func (n *connectionManager) migrateRelayUsed(oldhostinfo, newhostinfo *HostInfo)
 				// should never happen
 			}
 		case !ok:
+			n.l.Debugf("!ok. migrate relay we need a new one")
 			n.relayUsedLock.RLock()
-			if _, relayUsed := n.relayUsed[r.LocalIndex]; !relayUsed {
+			_, relayUsed := n.relayUsed[r.LocalIndex]
+			n.l.Debugf("relayUsed: %v", relayUsed)
+			if !relayUsed {
 				// The relay hasn't been used; don't migrate it.
 				n.relayUsedLock.RUnlock()
 				continue
@@ -546,6 +571,7 @@ func (n *connectionManager) migrateRelayUsed(oldhostinfo, newhostinfo *HostInfo)
 			n.relayUsedLock.RUnlock()
 			// The relay doesn't exist at all; create some relay state and send the request.
 			var err error
+			n.l.Debugf("adding new relay for %s\n", newhostinfo.vpnIp.String())
 			index, err = AddRelay(n.l, newhostinfo, n.hostMap, r.PeerIp, nil, r.Type, Requested)
 			if err != nil {
 				n.l.WithError(err).Error("failed to migrate relay to new hostinfo")
@@ -611,6 +637,15 @@ func (n *connectionManager) makeTrafficDecision(localIndex uint32, now time.Time
 	if n.swapRelay != nil {
 		decision := migrateRelays
 		n.trafficTimer.Add(hostinfo.localIndexId, n.checkInterval)
+
+		// We cant send a nil hostinfo in
+		/*
+		delete(n.pendingDeletion, hostinfo.localIndexId)
+		if n.hostMap.DeleteHostInfo(hostinfo) {
+			// Only clearing the lighthouse cache if this is the last hostinfo for this vpn ip in the hostmap
+			n.intf.lightHouse.DeleteVpnIp(hostinfo.vpnIp)
+		}
+		*/
 		return decision, hostinfo, primary
 	}
 

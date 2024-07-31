@@ -207,6 +207,7 @@ func (rm *relayManager) handleCreateRelayRequest(h *HostInfo, f *Interface, m *N
 				}
 			}
 		} else {
+			logMsg.Info("Going to add relay")
 			_, err := AddRelay(rm.l, h, f.hostMap, from, &m.InitiatorRelayIndex, TerminalType, Established)
 			if err != nil {
 				logMsg.WithError(err).Error("Failed to add relay")
@@ -245,23 +246,32 @@ func (rm *relayManager) handleCreateRelayRequest(h *HostInfo, f *Interface, m *N
 	} else {
 		// the target is not me. Create a relay to the target, from me.
 		if !rm.GetAmRelay() {
+			logMsg.Error("not configured as relay")
 			return
 		}
 		peer := rm.hostmap.QueryVpnIp(target)
 		if peer == nil {
+			logMsg.Infof("sending handshake to target: %s", target.String())
 			// Try to establish a connection to this host. If we get a future relay request,
 			// we'll be ready!
 			f.Handshake(target)
 			return
 		}
+		peerip := peer.vpnIp.String()
+		logMsg.Infof("sending handshake to peer: %s for target: %s", peerip, target.String())
 		if peer.remote == nil {
+			logMsg.Info("cannot create peer because remote is nil for %s", peerip)
 			// Only create relays to peers for whom I have a direct connection
 			return
 		}
 		sendCreateRequest := false
 		var index uint32
 		var err error
+
 		targetRelay, ok := peer.relayState.QueryRelayForByIp(from)
+		if targetRelay != nil {
+			logMsg.Infof("target relay: %s, ok?: %v", targetRelay.PeerIp.String(), ok)
+		}
 		if ok {
 			index = targetRelay.LocalIndex
 			if targetRelay.State == Requested {
@@ -269,6 +279,7 @@ func (rm *relayManager) handleCreateRelayRequest(h *HostInfo, f *Interface, m *N
 			}
 		} else {
 			// Allocate an index in the hostMap for this relay peer
+			logMsg.Infof("adding relay %s from %s", peerip, from.String())
 			index, err = AddRelay(rm.l, peer, f.hostMap, from, nil, ForwardingType, Requested)
 			if err != nil {
 				return

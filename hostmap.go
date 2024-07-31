@@ -488,9 +488,16 @@ func (hm *HostMap) queryVpnIp(vpnIp iputil.VpnIp, promoteIfce *Interface) *HostI
 	if h, ok := hm.Hosts[vpnIp]; ok {
 		hm.RUnlock()
 		// Do not attempt promotion if you are a lighthouse
+		hm.l.Debugf("querying lighthouse for: %s", vpnIp.String())
 		if promoteIfce != nil && !promoteIfce.lightHouse.amLighthouse {
 			h.TryPromoteBest(hm.GetPreferredRanges(), promoteIfce)
 		}
+		
+		/*
+		if promoteIfce != nil && !promoteIfce.lightHouse.amLighthouse {
+			promoteIfce.lightHouse.QueryServer(vpnIp)
+		}
+		*/
 		return h
 
 	}
