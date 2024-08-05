@@ -634,18 +634,11 @@ func (n *connectionManager) makeTrafficDecision(localIndex uint32, now time.Time
 		mainHostInfo = false
 	}
 
-	if n.swapRelay != nil {
+	// we only want to swap the relay if the traffic decision function is being called
+	// on the swap relay host, otherwise we are going to wait until the correct activation
+	if n.swapRelay != nil && n.swapRelay == hostinfo {
 		decision := migrateRelays
 		n.trafficTimer.Add(hostinfo.localIndexId, n.checkInterval)
-
-		// We cant send a nil hostinfo in
-		/*
-		delete(n.pendingDeletion, hostinfo.localIndexId)
-		if n.hostMap.DeleteHostInfo(hostinfo) {
-			// Only clearing the lighthouse cache if this is the last hostinfo for this vpn ip in the hostmap
-			n.intf.lightHouse.DeleteVpnIp(hostinfo.vpnIp)
-		}
-		*/
 		return decision, hostinfo, primary
 	}
 

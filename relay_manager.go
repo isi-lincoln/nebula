@@ -246,12 +246,12 @@ func (rm *relayManager) handleCreateRelayRequest(h *HostInfo, f *Interface, m *N
 	} else {
 		// the target is not me. Create a relay to the target, from me.
 		if !rm.GetAmRelay() {
-			logMsg.Error("not configured as relay")
+	                logMsg.Error("not configured as relay")
 			return
 		}
 		peer := rm.hostmap.QueryVpnIp(target)
 		if peer == nil {
-			logMsg.Infof("sending handshake to target: %s", target.String())
+		        logMsg.Infof("sending handshake to target: %s", target.String())
 			// Try to establish a connection to this host. If we get a future relay request,
 			// we'll be ready!
 			f.Handshake(target)
@@ -279,7 +279,7 @@ func (rm *relayManager) handleCreateRelayRequest(h *HostInfo, f *Interface, m *N
 			}
 		} else {
 			// Allocate an index in the hostMap for this relay peer
-			logMsg.Infof("adding relay %s from %s", peerip, from.String())
+		        logMsg.Infof("adding relay %s from %s", peerip, from.String())
 			index, err = AddRelay(rm.l, peer, f.hostMap, from, nil, ForwardingType, Requested)
 			if err != nil {
 				return
