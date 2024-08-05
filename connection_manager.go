@@ -55,6 +55,7 @@ type connectionManager struct {
 	metricsTxPunchy         metrics.Counter
 	avoidToken              string
 	swapRelay               *HostInfo
+	swapDest                *HostInfo
 
 	l *logrus.Logger
 }
@@ -427,28 +428,22 @@ func (n *connectionManager) doTrafficCheck(localIndex uint32, p, nb, out []byte,
 		n.swapPrimary(hostinfo, primary)
 
 	case migrateRelays:
-		// TODO: Lincoln - because this is a traffic decision, it may not be the
-		// hostinfo we need to swap with, so we need to set a dest hostip
-		// check against that and then set migrate on it
-		if n.swapRelay != nil {
-			// we cannot swap to the current relay
-			if n.swapRelay.vpnIp == hostinfo.vpnIp {
-				n.l.Errorf("Cannot swap from self to self%s\n", hostinfo.vpnIp, n.swapRelay.vpnIp)
-				n.swapRelay = nil
-			} else {
-				// kill the current tunnel
-				n.intf.sendCloseTunnel(hostinfo)
-				n.intf.closeTunnel(hostinfo)
+		if n.swapRelay != nil && n.swapDest != nil {
+			// kill the current tunnel
+			n.intf.sendCloseTunnel(n.swapDest)
+			n.intf.closeTunnel(n.swapDest)
 
-				// set a new relay in handshake manager
-				n.intf.handshakeManager.config.forcedRelay = &n.swapRelay.vpnIp
-				n.l.Infof("calling migrate relays with: %s -> %s\n", hostinfo.vpnIp, n.swapRelay.vpnIp)
-				// call migrate to swap data structs
-				n.migrateRelayUsed(hostinfo, n.swapRelay)
+			// set a new relay in handshake manager
+			n.intf.handshakeManager.config.forcedRelay = &n.swapRelay.vpnIp
+			n.l.Infof("calling migrate relays with: (target) %s -> (new relay) %s\n", 
+				n.swapDest.vpnIp.String(), n.swapRelay.vpnIp.String(),
+			)
+			// call migrate to swap data structs
+			n.migrateRelayUsed(n.swapDest, n.swapRelay)
 
-				// reset swap
-				n.swapRelay = nil
-			}
+			// reset swap
+			n.swapRelay = nil
+			n.swapDest = nil
 		}
 
 	case tryRehandshake:
@@ -472,57 +467,10 @@ func (n *connectionManager) resetRelayTrafficCheck(hostinfo *HostInfo) {
 	}
 }
 
-func MigrateRelayUsed(relayhost *HostInfo, log *logrus.Logger) error {
+func MigrateRelayUsed(dstHost, relayhost *HostInfo, log *logrus.Logger) error {
 	log.Infof("In Migrate\n")
 
-
-	/*
-	var err error
-	hostmap := iface.hostMap
-	// nuke the hell out of current relays
-	log.Infof("nuking relays\n")
-	// TODO: assumes remotes is not empty
-	dsthost.remotes.relays = []*iputil.VpnIp{&relayhost.vpnIp}
-	dsthost.relayState = RelayState{
-		relays:        map[iputil.VpnIp]struct{}{},
-		relayForByIp:  map[iputil.VpnIp]*Relay{},
-		relayForByIdx: map[uint32]*Relay{},
-	}
-	dstip := dsthost.vpnIp
-	hostmap.Relays = map[uint32]*HostInfo{dstip.(uint32): relayhost}
-
-	index, err := AddRelay(log, relayhost, hostmap, dstip, nil, TerminalType, Requested)
-	//index, err := AddRelay(log, newhostinfo, hostmap, peer, nil, ForwardingType, Requested)
-	if err != nil {
-		log.WithError(err).Error("failed to migrate relay to new hostinfo")
-		return err
-	}
-	relayFrom := iface.myVpnIp
-	relayTo := dstip
-
-	// Send a CreateRelayRequest to the peer.
-	req := NebulaControl{
-		Type:                NebulaControl_CreateRelayRequest,
-		InitiatorRelayIndex: index,
-		RelayFromIp:         uint32(relayFrom),
-		RelayToIp:           uint32(relayTo),
-	}
-	msg, err := req.Marshal()
-	if err != nil {
-		log.WithError(err).Error("failed to marshal Control message to migrate relay")
-		return err
-	} else {
-		iface.SendMessageToHostInfo(header.Control, 0, relayhost, msg, make([]byte, 12), make([]byte, mtu))
-		log.WithFields(logrus.Fields{
-			"relayFrom":           iputil.VpnIp(req.RelayFromIp),
-			"relayTo":             iputil.VpnIp(req.RelayToIp),
-			"initiatorRelayIndex": req.InitiatorRelayIndex,
-			"responderRelayIndex": req.ResponderRelayIndex,
-			"vpnIp":               relayhost.vpnIp}).
-			Info("send CreateRelayRequest")
-	}
-
-	*/
+	netconn.swapDest = dstHost
 	netconn.swapRelay = relayhost
 	return nil
 }

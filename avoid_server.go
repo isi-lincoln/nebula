@@ -178,7 +178,7 @@ func (s *AvoidClient) Action(ctx context.Context, req *avoid.ActionRequest) (*av
 
 			// setup the relay change
 			//err = MigrateRelayUsed(relayhostinfo, dsthostinfo, s.iface.l, s.iface)
-			err = MigrateRelayUsed(relayhostinfo, s.iface.l)
+			err = MigrateRelayUsed(dsthostinfo, relayhostinfo, s.iface.l)
 			if err != nil {
 				log.WithError(err).Errorf("failed in Action: Migrate")
 				return nil, err
