@@ -1,6 +1,6 @@
 ---
 # install avoid code but not services
-- hosts: [r0, r1, lh, ue, dst]
+- hosts: overlay
   become: true
   tasks:
     - name: Get the apt things we need

@@ -1,6 +1,6 @@
 ---
 # install and configure etcd
-- hosts: [lh]
+- hosts: db
   become: true
   tasks:
     - import_role:
@@ -8,16 +8,16 @@
       vars:
         keygen: yes
         server: yes
-        alias: "lh"
-        address: "lh.{{ nebula_network_fqdn }}"
-        ip: "{{ overlay['lh'].ip }}"
+        alias: "{{ inventory_hostname }}"
+        address: "{{ inventory_hostname }}.{{ nebula_network_fqdn }}"
+        ip: "{{ overlay[inventory_hostname].ip }}"
         auth_hosts:
-          - "lh"
-          - "lh.{{ nebula_network_fqdn }}"
-          - "{{ overlay['lh'].ip }}"
+          - "{{ inventory_hostname }}"
+          - "{{ inventory_hostname }}.{{ nebula_network_fqdn }}"
+          - "{{ overlay[inventory_hostname].ip }}"
         hosts:
-          - alias: "lh"
-            endpoint: lh=https://{{ overlay[inventory_hostname].ip }}:2380
+          - alias: "{{ inventory_hostname }}"
+            endpoint: "{{inventory_hostname}}=https://{{ overlay[inventory_hostname].ip }}:2380"
 
 
 #- hosts: [lh]

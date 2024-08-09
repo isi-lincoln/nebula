@@ -47,8 +47,8 @@
         nebula_lighthouse_internal_ip_addr: "{{ overlay['lh'].ip }}"
         nebula_interface_name: "{{ nebula_iface_name }}"
  
-# make r0, r1 relays to ue
-- hosts: [r0, r1]
+# make relays for endpoints
+- hosts: relays
   become: true
   tasks:
     - name: make r0, r1 relays for ue
@@ -65,7 +65,7 @@
 
 # add r0 to be a relay for ue,
 # our code (avoid) will then test the switching behaviors
-- hosts: ue
+- hosts: endpoints
   become: true
   tasks:
     - name: make ue use relays
@@ -74,11 +74,18 @@
         path: /opt/nebula/config.yml
         line: '  use_relays: true'
 
+    # we can make switching relays faster by putting all available relays
+    # here
     - name: change default relay to be r0
-      lineinfile:
-        regexp: '- {{ overlay["lh"].ip }}'
+      replace:
         path: /opt/nebula/config.yml
-        line: '    - {{ overlay["r0"].ip }}'
+        regexp: '(<= relays:)[^#]*?'
+        replace: |+
+           \1
+              - {{ overlay["r0"].ip }}
+              - {{ overlay["r1"].ip }}
+              - {{ overlay["r2"].ip }}
+           #
 
     - name: daemon reload
       command: systemctl daemon-reload

@@ -31,14 +31,13 @@
       become: yes
       when: inventory_hostname in vars['config']
 
-# TODO: align with variables
-- hosts: ue
+- hosts: endpoints
   tasks:
-    - name: add default for ue
-      command: sudo ip route add 10.0.0.0/24 dev eth1
+    - name: add default for endpoints
+      command: sudo ip route add {{ config[inventory_hostname].interfaces[0].route }} dev {{ config[inventory_hostname].interfaces[0].name }}
       become: yes
 
-- hosts: [r0, r1]
+- hosts: relays
   tasks:
     - name: ipv4 forwarding
       shell: echo 1 > /proc/sys/net/ipv4/ip_forward
@@ -48,6 +47,7 @@
       shell: echo 1 > /proc/sys/net/ipv4/conf/all/proxy_arp
       become: yes
 
+# TODO: align with variables
 - hosts: [lh]
   tasks:
     - name: add route back to ue
@@ -55,5 +55,8 @@
       become: yes
       loop:
         - "10.10.0.0/24 via 10.0.0.100"
-        - "10.11.0.0/24 via 10.0.0.101"
-
+        - "10.11.0.0/24 via 10.0.0.100"
+        - "10.12.0.0/24 via 10.0.0.101"
+        - "10.13.0.0/24 via 10.0.0.101"
+        - "10.14.0.0/24 via 10.0.0.102"
+        - "10.15.0.0/24 via 10.0.0.102"

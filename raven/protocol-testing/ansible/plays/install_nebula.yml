@@ -1,23 +1,20 @@
-- hosts: [r0, r1, lh, ue, dst]
+- hosts: overlay
   become: true
   vars:
-  tasks:
-    - import_role:
-        name: nebula-role
-      vars:
-        nebula_network_name: "{{ nebula_network_domain }}"
-        nebula_fqdn: "{{ nebula_network_fqdn }}"
-        nebula_node_use_lighthouse_as_relay: false
-        nebula_lighthouses_inventory: [lh]
-        nebula_lighthouse_hostname: lh
-        nebula_certificate_authority: r0
-        nebula_ca_password: "123456"
-        nebula_ca_encrypt: yes
-        nebula_interface_name: "{{ nebula_iface_name }}"
-        nebula_lighthouse_public_hostname: "{{ config['lh'].interfaces[0].ip }}"
-        nebula_lighthouse_internal_ip_addr: "{{ overlay['lh'].ip }}"
-        nebula_network_cidr: "24"
-        nebula_clean_install: true
-        nebula_internal_ip_addr: "{{ overlay[inventory_hostname].ip }}"
-        avoid_endpoints: ["{{ overlay['ue'].nebula.ip }}:55554"]
-        install_user: rvn
+    nebula_network_name: "{{ nebula_network_domain }}"
+    nebula_fqdn: "{{ nebula_network_fqdn }}"
+    nebula_node_use_lighthouse_as_relay: false
+    nebula_lighthouses_inventory: [lh]
+    nebula_lighthouse_hostname: lh
+    nebula_certificate_authority: r0
+    nebula_ca_password: "123456"
+    nebula_ca_encrypt: yes
+    nebula_interface_name: "{{ nebula_iface_name }}"
+    nebula_lighthouse_public_hostname: "{{ config['lh'].interfaces[0].ip }}"
+    nebula_lighthouse_internal_ip_addr: "{{ overlay['lh'].ip }}"
+    nebula_network_cidr: "24"
+    nebula_clean_install: true
+    nebula_internal_ip_addr: "{{ overlay[inventory_hostname].ip }}"
+    install_user: rvn
+  roles:
+    - nebula-role
