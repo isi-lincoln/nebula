@@ -1,0 +1,23 @@
+[Unit]
+Description=Avoid {{ service }} for docker container
+Wants=basic.target network-online.target nss-lookup.target time-sync.target
+After=lighthouse.service docker.service
+Requires=docker.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+SyslogIdentifier=avoid
+ExecStartPre=sh -c '/usr/bin/docker kill {{ image }} || /usr/bin/true'
+ExecStartPre=sh -c '/usr/bin/docker rm {{ image }} || /usr/bin/true'
+ExecStartPre=/usr/bin/docker pull {{ image }}:{{ tag }}
+ExecStart=/usr/bin/docker run \
+	--rm --net=host --name {{ service }} \
+	-v /etc/etcd:/etc/etcd \
+	-v /etc/avoid:/etc/avoid \
+{{ image }}:{{ tag }}
+Restart=always
+RestartSec=42s
+
+[Install]
+WantedBy=multi-user.target
