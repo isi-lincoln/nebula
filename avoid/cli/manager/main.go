@@ -57,37 +57,31 @@ func main() {
 	}
 	get.AddCommand(GetStatsUE)
 
-	action := &cobra.Command{
-		Use:   "action",
-		Short: "tell a UE to do something",
-	}
-	root.AddCommand(action)
-
-	migrate := &cobra.Command{
-		Use:   "migrate",
-		Short: "move the UE to another thing",
-	}
-	action.AddCommand(migrate)
-
 	disconnect := &cobra.Command{
 		Use:   "disconnect",
 		Short: "disconnect UE from thing",
 	}
-	action.AddCommand(disconnect)
+	root.AddCommand(disconnect)
 
-	migrateUE := &cobra.Command{
-		Use:   "ue <id> <lighthouse|endpoint|radio|network|relay> <value>",
-		Short: "move the UE to another thing",
+	migrate := &cobra.Command{
+		Use:   "migrate",
+		Short: "migrate UE from thing",
+	}
+	root.AddCommand(migrate)
+
+	migrateRelay := &cobra.Command{
+		Use:   "relay <ue id> <dst ip> <relay ip>",
+		Short: "move the UE to another relay",
 		Long:  "tell the UE through nebula tunnel that it needs to change values",
 		Args:  cobra.ExactArgs(3),
 		Run: func(cmd *cobra.Command, args []string) {
 			ActionUEFunc(args[0], args[1], args[2], avoid.ActionMessage_MIGRATE)
 		},
 	}
-	migrate.AddCommand(migrateUE)
+	migrate.AddCommand(migrateRelay)
 
 	disconnectUE := &cobra.Command{
-		Use:   "ue <id> <lighthouse|endpoint|radio|network|relay>",
+		Use:   "<id> <lighthouse|endpoint|radio|network|relay>",
 		Short: "move the UE to another thing",
 		Long:  "tell the UE through nebula tunnel that it needs to change values",
 		Args:  cobra.ExactArgs(2),
@@ -95,50 +89,45 @@ func main() {
 			ActionUEFunc(args[0], args[1], "", avoid.ActionMessage_DISCONNECT)
 		},
 	}
-	migrate.AddCommand(disconnectUE)
+	disconnect.AddCommand(disconnectUE)
 
 	root.Execute()
 }
 
-func ActionUEFunc(name, typeMigrate, value string, am avoid.ActionMessage_Action) {
+func ActionUEFunc(ueUUID, dest, changed string, am avoid.ActionMessage_Action) {
 
-	// TODO parse value and sanitize
-	var valueList []string
-	if value != "" {
-		valueList = []string{value}
-	} else {
-		valueList = nil
-	}
-
+	// TODO: change the protobuf to have a standardized value set for each action
 	req := &avoid.ActionRequest{
-		Identifier: name,
+		Identifier: ueUUID,
 		Action: &avoid.ActionMessage{
 			Connection: avoid.ActionMessage_RELAY,
 			Action:     am,
 		},
-		Values: valueList,
+		Values: []string{dest, changed},
 	}
-	log.Infof("type: %s", typeMigrate)
-	switch typeMigrate {
-	case "lighthouse":
-		req.Action.Connection = avoid.ActionMessage_LIGHTHOUSE
-		break
-	case "endpoint":
-		req.Action.Connection = avoid.ActionMessage_ENDPOINT
-		break
-	case "radio":
-		req.Action.Connection = avoid.ActionMessage_RADIO
-		break
-	case "network":
-		req.Action.Connection = avoid.ActionMessage_NETWORK
-		break
-	case "relay":
-		req.Action.Connection = avoid.ActionMessage_RELAY
-		break
-	default:
-		log.Errorf("unknown migration type: %s\n", typeMigrate)
-		return
-	}
+	/*
+		log.Infof("type: %s", typeMigrate)
+		switch typeMigrate {
+		case "lighthouse":
+			log.Errorf("Not implemented.")
+			return
+		case "endpoint":
+			log.Errorf("Not implemented.")
+			return
+		case "radio":
+			log.Errorf("Not implemented.")
+			return
+		case "network":
+			log.Errorf("Not implemented.")
+			return
+		case "relay":
+			req.Action.Connection = avoid.ActionMessage_RELAY
+			break
+		default:
+			log.Errorf("unknown migration type: %s\n", typeMigrate)
+			return
+		}
+	*/
 
 	// TODO: tls in WithAvoidManager
 	addr := fmt.Sprintf("%s:%d", clientServer, clientPort)
